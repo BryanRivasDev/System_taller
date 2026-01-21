@@ -20,7 +20,7 @@ if (empty($serial)) {
 
 try {
     // 1. Search in EQUIPMENT table to find the equipment ID
-    $stmtEq = $pdo->prepare("SELECT id, brand, model, type, client_id FROM equipments WHERE serial_number = ? LIMIT 1");
+    $stmtEq = $pdo->prepare("SELECT id, brand, model, submodel, type, client_id FROM equipments WHERE serial_number = ? LIMIT 1");
     $stmtEq->execute([$serial]);
     $equipment = $stmtEq->fetch();
 
@@ -66,6 +66,7 @@ try {
                 'data' => [
                     'brand' => $equipment['brand'],
                     'model' => $equipment['model'],
+                    'submodel' => $equipment['submodel'],
                     'type' => $equipment['type'],
                     'client_name' => $clientName,
                     'client_id' => $equipment['client_id'],
@@ -82,6 +83,7 @@ try {
                 'data' => [
                     'brand' => $equipment['brand'],
                     'model' => $equipment['model'],
+                    'submodel' => $equipment['submodel'],
                     'type' => $equipment['type'],
                     'client_name' => $clientName,
                     'client_id' => $equipment['client_id']

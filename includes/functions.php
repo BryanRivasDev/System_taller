@@ -95,4 +95,101 @@ function format_currency($amount) {
 function format_date($date) {
     return date('d/m/Y H:i', strtotime($date));
 }
+
+/**
+ * Get next sequence number for a specific code (diagnosis, repair, exit_doc)
+ * MUST be called within a transaction
+ */
+function get_next_sequence($pdo, $code) {
+    // Select for update to lock the row
+    $stmt = $pdo->prepare("SELECT current_value FROM system_sequences WHERE code = ? FOR UPDATE");
+    $stmt->execute([$code]);
+    $current = $stmt->fetchColumn();
+    
+    if ($current === false) {
+        // Create if missing (fallback)
+        $pdo->prepare("INSERT INTO system_sequences (code, current_value) VALUES (?, 0)")->execute([$code]);
+        $current = 0;
+    }
+    
+    $next = $current + 1;
+    $pdo->prepare("UPDATE system_sequences SET current_value = ? WHERE code = ?")->execute([$next, $code]);
+    
+    return $next;
+}
+
+/**
+ * Update Service Order Status and Assign Numbers
+ */
+function update_service_status($pdo, $order_id, $new_status, $note, $user_id) {
+    // Check if we started the transaction or if the caller did
+    $transactionStarted = false;
+    if (!$pdo->inTransaction()) {
+        $pdo->beginTransaction();
+        $transactionStarted = true;
+    }
+    
+    try {
+        // Get current info locked
+        $stmt = $pdo->prepare("SELECT status, diagnosis_number, repair_number, exit_doc_number FROM service_orders WHERE id = ? FOR UPDATE");
+        $stmt->execute([$order_id]);
+        $order = $stmt->fetch();
+        
+        if (!$order) {
+            throw new Exception("Orden no encontrada");
+        }
+        
+        // Updates array
+        $updates = [];
+        $params = [];
+        
+        $updates[] = "status = ?";
+        $params[] = $new_status;
+        
+        // Check triggers for Number Assignment
+        
+        // 1. Diagnosis Number: Assign when moving to 'diagnosing' AND not yet assigned
+        if ($new_status === 'diagnosing' && is_null($order['diagnosis_number'])) {
+            $next_val = get_next_sequence($pdo, 'diagnosis');
+            $updates[] = "diagnosis_number = ?";
+            $params[] = $next_val;
+        }
+        
+        // 2. Repair Number: Assign when moving to 'ready' AND not yet assigned
+        if ($new_status === 'ready' && is_null($order['repair_number'])) {
+            $next_val = get_next_sequence($pdo, 'repair');
+            $updates[] = "repair_number = ?";
+            $params[] = $next_val;
+        }
+        
+        // 3. Exit Doc Number: Assign when moving to 'delivered' AND not yet assigned
+        // Note: Can also be assigned manually if needed, but this ensures it's there on delivery
+        if ($new_status === 'delivered' && is_null($order['exit_doc_number'])) {
+            $next_val = get_next_sequence($pdo, 'exit_doc');
+            $updates[] = "exit_doc_number = ?";
+            $params[] = $next_val;
+        }
+        
+        // Execute Update
+        $params[] = $order_id;
+        $sql = "UPDATE service_orders SET " . implode(', ', $updates) . " WHERE id = ?";
+        $pdo->prepare($sql)->execute($params);
+        
+        // Log History
+        $action_label = $new_status; // Can be mapped if needed, but keeping it simple
+        $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, ?, ?, ?)")
+            ->execute([$order_id, $new_status, $note, $user_id]);
+        
+        if ($transactionStarted) {
+            $pdo->commit();
+        }
+        return true;
+        
+    } catch (Exception $e) {
+        if ($transactionStarted && $pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        throw $e;
+    }
+}
 ?>

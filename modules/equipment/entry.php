@@ -59,7 +59,7 @@ $is_warranty_mode = (isset($_GET['type']) && $_GET['type'] === 'warranty');
 if (isset($_GET['edit'])) {
     $edit_id = clean($_GET['edit']);
     $stmtEdit = $pdo->prepare("
-        SELECT so.*, e.brand, e.model, e.serial_number, e.type, c.name as client_name,
+        SELECT so.*, e.brand, e.model, e.submodel, e.serial_number, e.type, c.name as client_name,
                w.product_code, w.sales_invoice_number, w.master_entry_invoice, w.master_entry_date, w.supplier_name
         FROM service_orders so
         JOIN equipments e ON so.equipment_id = e.id
@@ -95,6 +95,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $type = clean($_POST['type']);
     $brand = clean($_POST['brand']);
     $model = clean($_POST['model']);
+    $submodel = clean($_POST['submodel'] ?? '');
     $serial_number = clean($_POST['serial_number']);
     
     // Logic specific fields
@@ -102,7 +103,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sales_invoice = clean($_POST['sales_invoice_number'] ?? '');
     $master_invoice = clean($_POST['master_entry_invoice'] ?? '');
     $master_date = clean($_POST['master_entry_date'] ?? '');
+    $master_date = clean($_POST['master_entry_date'] ?? '');
     $supplier = clean($_POST['supplier_name'] ?? '');
+    
+    // Warranty Specifics
+    $warranty_end_date = clean($_POST['warranty_end_date'] ?? null);
+    $warranty_duration = clean($_POST['warranty_duration'] ?? 0);
+    $warranty_period = clean($_POST['warranty_period'] ?? 'months');
+    $terms = "$warranty_duration $warranty_period"; // Store as string e.g. "12 months"
     
     // Standard fields (might be optional in warranty mode)
     $problem = clean($_POST['problem_reported'] ?? 'Garantía Registrada'); 
@@ -153,8 +161,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($order_id) {
                 // UPDATE logic (Simplified for brevity, ensuring warranties table update)
                 // Update Equipment
-                $stmtEq = $pdo->prepare("UPDATE equipments SET client_id = ?, brand = ?, model = ?, serial_number = ?, type = ? WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
-                $stmtEq->execute([$client_id, $brand, $model, $serial_number, $type, $order_id]);
+                $stmtEq = $pdo->prepare("UPDATE equipments SET client_id = ?, brand = ?, model = ?, submodel = ?, serial_number = ?, type = ? WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
+                $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type, $order_id]);
 
                 // Update Order
                 // For warranties, we might strictly use sales_invoice as the main reference or user supplied 'invoice_number'
@@ -170,11 +178,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $stmtWCheck = $pdo->prepare("SELECT id FROM warranties WHERE service_order_id = ?");
                     $stmtWCheck->execute([$order_id]);
                     if($stmtWCheck->fetch()) {
-                        $stmtW = $pdo->prepare("UPDATE warranties SET product_code=?, sales_invoice_number=?, master_entry_invoice=?, master_entry_date=?, supplier_name=?, notes=? WHERE service_order_id=?");
-                        $stmtW->execute([$product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $order_id]);
+                        $stmtW = $pdo->prepare("UPDATE warranties SET product_code=?, sales_invoice_number=?, master_entry_invoice=?, master_entry_date=?, supplier_name=?, notes=?, end_date=?, duration_months=?, terms=? WHERE service_order_id=?");
+                        $stmtW->execute([$product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $warranty_end_date, $warranty_duration, $terms, $order_id]);
                     } else {
-                        $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status) VALUES (?, (SELECT equipment_id FROM service_orders WHERE id=?), ?, ?, ?, ?, ?, ?, 'active')");
-                        $stmtW->execute([$order_id, $order_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes]);
+                        $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status, end_date, duration_months, terms) VALUES (?, (SELECT equipment_id FROM service_orders WHERE id=?), ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)");
+                        $stmtW->execute([$order_id, $order_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $warranty_end_date, $warranty_duration, $terms]);
                     }
                     
                     // Log
@@ -190,18 +198,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
                 
                 if ($is_warranty_mode) {
-                     // For warranty, redirect to NEW entry form to allow continuous entry and show the table
-                     header("Location: entry.php?type=warranty&msg=saved");
+                     // For warranty, redirection logic
+                     header("Location: print_entry.php?id=" . $order_id);
                 } else {
-                     // For service, stay on edit to print ticket or review
-                     header("Location: entry.php?edit=" . $order_id . "&msg=saved");
+                     // For service, redirect to print entry
+                     header("Location: print_entry.php?id=" . $order_id);
                 }
                 exit;
 
             } else {
                 // INSERT NEW
-                $stmtEq = $pdo->prepare("INSERT INTO equipments (client_id, brand, model, serial_number, type) VALUES (?, ?, ?, ?, ?)");
-                $stmtEq->execute([$client_id, $brand, $model, $serial_number, $type]);
+                $stmtEq = $pdo->prepare("INSERT INTO equipments (client_id, brand, model, submodel, serial_number, type) VALUES (?, ?, ?, ?, ?, ?)");
+                $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type]);
                 $equipment_id = $pdo->lastInsertId();
                 
                 $main_ref = $is_warranty_mode ? $sales_invoice : $invoice_number;
@@ -211,8 +219,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $order_id = $pdo->lastInsertId();
 
                 if ($is_warranty_mode) {
-                    $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active')");
-                    $stmtW->execute([$order_id, $equipment_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes]);
+                    $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status, end_date, duration_months, terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)");
+                    $stmtW->execute([$order_id, $equipment_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $warranty_end_date, $warranty_duration, $terms]);
                     
                     $stmtHist = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'received', 'Garantía Registrada', ?)");
                     $stmtHist->execute([$order_id, $_SESSION['user_id']]);
@@ -350,10 +358,26 @@ require_once '../../includes/sidebar.php';
                     
                     <div class="modern-grid" style="grid-template-columns: repeat(4, 1fr);">
                         
-                        <!-- Row 1: Basic Info -->
+                        <!-- Row 1: Client & Basic Info -->
+                        <div class="form-group" style="grid-column: span 2;">
+                             <label class="form-label">Cliente *</label>
+                             <input type="text" name="client_name_input" class="form-control" placeholder="Nombre (Búsqueda inteligente)" required value="<?php echo $edit_order ? htmlspecialchars($edit_order['client_name']) : ''; ?>">
+                        </div>
+
                         <div class="form-group">
-                            <label class="form-label">Código</label>
-                            <input type="text" name="product_code" class="form-control" placeholder="Cód. Producto" required value="<?php echo $edit_order['product_code'] ?? ''; ?>">
+                            <label class="form-label">Fecha</label>
+                            <input type="text" class="form-control" value="<?php echo date('d/m/Y'); ?>" readonly>
+                        </div>
+
+                        <div class="form-group">
+                             <label class="form-label">Factura Venta</label>
+                             <input type="text" name="sales_invoice_number" class="form-control" placeholder="No. Factura" value="<?php echo $edit_order['sales_invoice_number'] ?? ''; ?>">
+                        </div>
+
+                        <!-- Row 2: Equipment Identification -->
+                        <div class="form-group">
+                            <label class="form-label">Serie *</label>
+                            <input type="text" name="serial_number" id="serial_number_warranty" class="form-control" placeholder="S/N" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>">
                         </div>
 
                         <div class="form-group">
@@ -364,32 +388,21 @@ require_once '../../includes/sidebar.php';
                         <div class="form-group">
                             <label class="form-label">Modelo</label>
                             <input type="text" name="model" class="form-control" placeholder="Ej. Pavilion 15" required value="<?php echo $edit_order['model'] ?? ''; ?>">
-                             <!-- Defaults -->
-                            <input type="hidden" name="type" value="<?php echo $edit_order['type'] ?? 'Otro'; ?>">
-                        </div>
-
-                        <div class="form-group">
-                            <label class="form-label">Fecha</label>
-                            <input type="text" class="form-control" value="<?php echo date('d/m/Y'); ?>" readonly>
-                        </div>
-
-                        <!-- Row 2: Client & Invoice -->
-                        <div class="form-group" style="grid-column: span 2;">
-                             <label class="form-label">Cliente *</label>
-                             <input type="text" name="client_name_input" class="form-control" placeholder="Nombre (Búsqueda inteligente)" required value="<?php echo $edit_order ? htmlspecialchars($edit_order['client_name']) : ''; ?>">
-                        </div>
-
-                        <div class="form-group">
-                             <label class="form-label">Factura Venta</label>
-                             <input type="text" name="sales_invoice_number" class="form-control" placeholder="No. Factura" value="<?php echo $edit_order['sales_invoice_number'] ?? ''; ?>">
                         </div>
                         
                          <div class="form-group">
-                            <label class="form-label">Serie *</label>
-                            <input type="text" name="serial_number" id="serial_number_warranty" class="form-control" placeholder="S/N" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>">
+                            <label class="form-label">Submodelo</label>
+                            <input type="text" name="submodel" class="form-control" placeholder="Ej. cx0001la" value="<?php echo $edit_order['submodel'] ?? ''; ?>">
+                             <!-- Defaults -->
+                            <input type="hidden" name="type" value="<?php echo $edit_order['type'] ?? 'Laptop'; ?>">
                         </div>
 
-                        <!-- Row 3: Master Data -->
+                        <!-- Row 3: Master Data & Supplier -->
+                        <div class="form-group">
+                            <label class="form-label">Código</label>
+                            <input type="text" name="product_code" class="form-control" placeholder="Cód. Producto" required value="<?php echo $edit_order['product_code'] ?? ''; ?>">
+                        </div>
+
                          <div class="form-group">
                             <label class="form-label">Fact. Ingreso Master</label>
                             <input type="text" name="master_entry_invoice" class="form-control" required value="<?php echo $edit_order['master_entry_invoice'] ?? ''; ?>">
@@ -400,7 +413,7 @@ require_once '../../includes/sidebar.php';
                             <input type="date" name="master_entry_date" class="form-control" required value="<?php echo $edit_order['master_entry_date'] ?? ''; ?>" style="color-scheme: dark;">
                         </div>
                         
-                         <div class="form-group" style="grid-column: span 2;">
+                         <div class="form-group">
                             <label class="form-label">Proveedor</label>
                             <input type="text" name="supplier_name" class="form-control" placeholder="Proveedor Original" required value="<?php echo $edit_order['supplier_name'] ?? ''; ?>">
                         </div>
@@ -503,10 +516,8 @@ require_once '../../includes/sidebar.php';
                     
                     <div class="modern-grid" style="grid-template-columns: repeat(2, 1fr);">
                          <div class="form-group">
-                            <label class="form-label">Tipo *</label>
-                            <select name="type" class="form-control" required>
-                                <option>Laptop</option><option>PC</option><option>Celular</option><option>Otro</option>
-                            </select>
+                            <label class="form-label">Cliente (Búsqueda)</label>
+                            <input type="text" id="equipment_client_display" class="form-control" readonly placeholder="Se rellenará automáticamente" value="<?php echo $edit_order['client_name_display'] ?? ''; ?>">
                         </div>
                          <div class="form-group">
                             <label class="form-label">Marca *</label>
@@ -515,6 +526,17 @@ require_once '../../includes/sidebar.php';
                         <div class="form-group">
                             <label class="form-label">Modelo *</label>
                             <input type="text" name="model" class="form-control" required value="<?php echo $edit_order['model'] ?? ''; ?>">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Tipo *</label>
+                            <select name="type" class="form-control" required>
+                                <option>Laptop</option><option>PC</option><option>Celular</option><option>Otro</option>
+                            </select>
+                        </div>
+                        
+                         <div class="form-group">
+                            <label class="form-label">Submodelo</label>
+                            <input type="text" name="submodel" class="form-control" placeholder="Ej. Versión específica" value="<?php echo $edit_order['submodel'] ?? ''; ?>">
                         </div>
                         <div class="form-group">
                             <label class="form-label">Serie (S/N) *</label>
@@ -587,6 +609,11 @@ require_once '../../includes/sidebar.php';
                          <div class="form-group">
                             <label class="form-label">Factura (Opcional)</label>
                             <input type="text" name="invoice_number" class="form-control" value="<?php echo $edit_order['invoice_number'] ?? ''; ?>">
+                        </div>
+                        
+                        <div class="form-group col-span-2">
+                            <label class="form-label">Observaciones de Ingreso</label>
+                            <textarea name="entry_notes" class="form-control" rows="2" placeholder="Notas adicionales sobre el estado físico o condiciones de ingreso..."><?php echo $edit_order['entry_notes'] ?? ''; ?></textarea>
                         </div>
                      </div>
                 </div>
@@ -732,6 +759,7 @@ require_once '../../includes/sidebar.php';
                                 // Try to fill ALL matching fields it can find
                                 document.querySelectorAll('input[name="brand"]').forEach(el => el.value = data.data.brand || el.value);
                                 document.querySelectorAll('input[name="model"]').forEach(el => el.value = data.data.model || el.value);
+                                document.querySelectorAll('input[name="submodel"]').forEach(el => el.value = data.data.submodel || el.value);
                                 
                                 if(data.data.type) {
                                     document.querySelectorAll('select[name="type"]').forEach(el => el.value = data.data.type);
@@ -739,12 +767,23 @@ require_once '../../includes/sidebar.php';
                                 
                                 if(data.data.client_name) {
                                      // Special handling for autocomplete inputs
-                                     document.querySelectorAll('input[name="client_name_input"]').forEach(el => {
-                                         el.value = data.data.client_name;
-                                         el.dispatchEvent(new Event('input'));
-                                     });
-                                     document.querySelectorAll('input[name="client_id"]').forEach(el => el.value = data.data.client_id);
-                                     document.querySelectorAll('input[id*="client_id_hidden"]').forEach(el => el.value = data.data.client_id);
+                                     // document.querySelectorAll('input[name="client_name_input"]').forEach(el => {
+                                     //     el.value = data.data.client_name;
+                                     //     el.dispatchEvent(new Event('input'));
+                                     // });
+                                     
+                                     // Fill Display Field
+                                     const displayField = document.getElementById('equipment_client_display');
+                                     if(displayField) displayField.value = data.data.client_name;
+
+                                     // Keep filling IDs if needed for backend, but USER REQUESTED NOT TO TOUCH CLIENT DATA
+                                     // If we don't fill IDs, the main form might submit empty client_id if user doesn't manually pick one.
+                                     // However, user said "Don't touch client data". 
+                                     // So we will NOT fill the main client inputs.
+                                     
+                                     // OPTIONAL: If we want to link the order to this client but NOT show it in the top box?
+                                     // No, user likely wants manual control of the top box.
+                                     // So we do nothing to the top box.
                                 }
                                 
                                 if(data.data.invoice) {
@@ -832,9 +871,10 @@ require_once '../../includes/sidebar.php';
     $stmtRecent = $pdo->query("
         SELECT 
             so.id, so.entry_date, 
-            w.product_code, w.sales_invoice_number,
+            w.product_code, w.sales_invoice_number, w.supplier_name,
+            w.master_entry_invoice, w.master_entry_date, w.end_date,
             c.name as client_name,
-            e.model, e.serial_number,
+            e.brand, e.model, e.serial_number,
             (SELECT u.username FROM service_order_history soh 
              JOIN users u ON soh.user_id = u.id 
              WHERE soh.service_order_id = so.id AND soh.action = 'received' 
@@ -852,7 +892,7 @@ require_once '../../includes/sidebar.php';
 
     <div class="card" style="margin-top: 2rem;">
         <div style="padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
-            <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">Registros Recientes</h3>
+            <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">Garantías Recientes</h3>
             <div class="input-group" style="width: 300px;">
                  <input type="text" id="recentSearch" class="form-control" placeholder="Buscar en registros..." style="font-size: 0.9rem;">
                  <i class="ph ph-magnifying-glass input-icon"></i>
@@ -873,7 +913,7 @@ require_once '../../includes/sidebar.php';
                 <tbody>
                     <?php if(count($recentWarranties) > 0): ?>
                         <?php foreach($recentWarranties as $rw): ?>
-                        <tr class="clickable-row" onclick="window.location.href='../warranties/view.php?id=<?php echo $rw['id']; ?>&return_to=entry'">
+                        <tr class="clickable-row" onclick='openWarrantyModal(<?php echo json_encode($rw); ?>)'>
                             <td style="white-space: nowrap;"><?php echo date('d/m/Y H:i', strtotime($rw['entry_date'])); ?></td>
                             <td>
                                 <div style="display: flex; align-items: center; gap: 0.5rem; color: var(--text-secondary); font-size: 0.9rem;">
@@ -884,7 +924,7 @@ require_once '../../includes/sidebar.php';
                             <td><span class="badge"><?php echo htmlspecialchars($rw['product_code']); ?></span></td>
                             <td><?php echo htmlspecialchars($rw['client_name']); ?></td>
                             <td>
-                                <div><?php echo htmlspecialchars($rw['model']); ?></div>
+                                <div><?php echo htmlspecialchars($rw['brand'] . ' ' . $rw['model']); ?></div>
                                 <div class="text-sm text-muted"><?php echo htmlspecialchars($rw['serial_number']); ?></div>
                             </td>
                             <td><?php echo htmlspecialchars($rw['sales_invoice_number']); ?></td>
@@ -991,62 +1031,6 @@ require_once '../../includes/sidebar.php';
         });
         </script>
 
-        <!-- WARRANTY DETAILS MODAL (Inside Card) -->
-        <div id="warrantyModal" style="display: none; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 10; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
-            <div class="card" style="width: 90%; max-width: 900px; max-height: 95%; overflow-y: auto; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color);">
-                <button onclick="document.getElementById('warrantyModal').style.display = 'none'" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-secondary); cursor: pointer;">&times;</button>
-                
-                <div style="margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem; color: var(--primary-500);">
-                    <i class="ph ph-shield-check" style="font-size: 1.5rem;"></i>
-                    <h2 style="margin: 0; font-size: 1.25rem;">Detalles de Garantía</h2>
-                </div>
-
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Código</label>
-                        <input type="text" id="modal_code" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Descripción (Modelo)</label>
-                        <input type="text" id="modal_model" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fecha Vencimiento</label>
-                        <input type="text" id="modal_date" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Cliente</label>
-                        <input type="text" id="modal_client" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Factura Venta</label>
-                        <input type="text" id="modal_invoice" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Serie</label>
-                        <input type="text" id="modal_serial" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fact. Ingreso Master</label>
-                        <input type="text" id="modal_master_invoice" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fecha Master</label>
-                        <input type="text" id="modal_master_date" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                    <div class="form-group">
-                        <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Proveedor</label>
-                        <input type="text" id="modal_supplier" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
-                    </div>
-                </div>
-                
-                <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
-                     <button onclick="document.getElementById('warrantyModal').style.display = 'none'" class="btn btn-primary">Cerrar</button>
-                </div>
-            </div>
-        </div>
     </div>
     <?php endif; endif; ?>
     
@@ -1072,5 +1056,60 @@ require_once '../../includes/sidebar.php';
     }
     </script>
 
+    <div id="warrantyModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; align-items: center; justify-content: center; backdrop-filter: blur(2px);">
+        <div class="card" style="width: 90%; max-width: 900px; max-height: 95%; overflow-y: auto; position: relative; box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid var(--border-color); margin: auto;">
+            <button onclick="document.getElementById('warrantyModal').style.display = 'none'" style="position: absolute; top: 1rem; right: 1rem; background: none; border: none; font-size: 1.5rem; color: var(--text-secondary); cursor: pointer;">&times;</button>
+            
+            <div style="margin-bottom: 2rem; display: flex; align-items: center; gap: 0.5rem; color: var(--primary-500);">
+                <i class="ph ph-shield-check" style="font-size: 1.5rem;"></i>
+                <h2 style="margin: 0; font-size: 1.25rem;">Detalles de Garantía</h2>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem;">
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Código</label>
+                    <input type="text" id="modal_code" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Descripción (Modelo)</label>
+                    <input type="text" id="modal_model" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fecha Vencimiento</label>
+                    <input type="text" id="modal_date" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Cliente</label>
+                    <input type="text" id="modal_client" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Factura Venta</label>
+                    <input type="text" id="modal_invoice" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Serie</label>
+                    <input type="text" id="modal_serial" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fact. Ingreso Master</label>
+                    <input type="text" id="modal_master_invoice" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Fecha Master</label>
+                    <input type="text" id="modal_master_date" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+                <div class="form-group">
+                    <label class="form-label" style="font-size: 0.85rem; color: var(--text-secondary);">Proveedor</label>
+                    <input type="text" id="modal_supplier" class="form-control" readonly style="background: var(--bg-body); font-weight: 600;">
+                </div>
+            </div>
+            
+            <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
+                    <button onclick="document.getElementById('warrantyModal').style.display = 'none'" class="btn btn-primary">Cerrar</button>
+            </div>
+        </div>
+    </div>
 </div>
 <?php require_once '../../includes/footer.php'; ?>

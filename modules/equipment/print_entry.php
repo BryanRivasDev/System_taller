@@ -1,5 +1,5 @@
 <?php
-// modules/equipment/print_delivery.php
+// modules/equipment/print_entry.php
 session_start();
 require_once '../../config/db.php';
 require_once '../../includes/functions.php';
@@ -25,63 +25,52 @@ $company_name = $settings['company_name'] ?? 'SYSTEM TALLER';
 $company_email = $settings['company_email'] ?? 'contacto@taller.com';
 $company_address = $settings['company_address'] ?? 'Av. Principal 123, Ciudad';
 $company_phone = $settings['company_phone'] ?? '(555) 123-4567';
-$print_footer_text = $settings['print_footer_text'] ?? 'Declaración de Conformidad: El cliente declara recibir el equipo a su entera satisfacción...';
+$print_footer_text = $settings['print_footer_text'] ?? 'Condiciones de Servicio: La empresa no se hace responsable por pérdida de información...'; // Customize default for Entry
 
 // Fetch Order Details
 $stmt = $pdo->prepare("
     SELECT 
         so.*,
         c.name as client_name, c.phone, c.email, c.tax_id, c.address,
-        e.brand, e.model, e.serial_number, e.type as equipment_type,
-        u.username as delivered_by
+        e.brand, e.model, e.submodel, e.serial_number, e.type as equipment_type,
+        u.username as received_by
     FROM service_orders so
     JOIN clients c ON so.client_id = c.id
     JOIN equipments e ON so.equipment_id = e.id
-    LEFT JOIN users u ON so.authorized_by_user_id = u.id
+    LEFT JOIN users u ON u.id = ? 
     WHERE so.id = ?
 ");
-$stmt->execute([$id]);
+// Note: 'received_by' logic usually tracks who created it. 
+// Standard schema tracks 'assigned_tech_id' or 'authorized_by_user_id', but creator is implicit in history or logs.
+// For now, we'll try to get the user who created the 'received' history event.
+
+$stmt->execute([$_SESSION['user_id'], $id]); // Just passing session user as fallback, but let's correct query below
 $order = $stmt->fetch();
 
 if (!$order) {
     die("Orden no encontrada.");
 }
 
-// Fetch Delivery Note
-$stmtNote = $pdo->prepare("SELECT notes FROM service_order_history WHERE service_order_id = ? AND action = 'delivered' ORDER BY created_at DESC LIMIT 1");
-$stmtNote->execute([$id]);
-$fullDeliveryNote = $stmtNote->fetchColumn();
+// Get Receiver Name (Creator)
+$stmtCreator = $pdo->prepare("SELECT u.username FROM service_order_history h JOIN users u ON h.user_id = u.id WHERE h.service_order_id = ? AND h.action = 'received' ORDER BY h.created_at ASC LIMIT 1");
+$stmtCreator->execute([$id]);
+$creator = $stmtCreator->fetchColumn();
+$received_by = $creator ? $creator : 'Taller Mastertec';
 
-// Parse Delivery Note
-$receiverName = $order['client_name']; 
-$deliveryComments = '';
-$receiverId = '';
-
-if ($fullDeliveryNote) {
-    if (preg_match('/Entregado a: (.*?) \((.*?)\)\. Notas: (.*)/', $fullDeliveryNote, $matches)) {
-        $receiverName = $matches[1];
-        $receiverId = $matches[2];
-        $deliveryComments = $matches[3];
-    } elseif (preg_match('/Entregado a: (.*?) \((.*?)\)/', $fullDeliveryNote, $matches)) {
-        $receiverName = $matches[1];
-        $receiverId = $matches[2];
-    }
-}
-
-// Ensure Exit Doc Number exists
-if (empty($order['exit_doc_number'])) {
+// Ensure Entry Doc Number exists
+if (empty($order['entry_doc_number'])) {
     try {
         $pdo->beginTransaction();
-        $next_val = get_next_sequence($pdo, 'exit_doc');
+        $next_val = get_next_sequence($pdo, 'entry_doc');
         
-        $stmtUpdate = $pdo->prepare("UPDATE service_orders SET exit_doc_number = ? WHERE id = ?");
+        $stmtUpdate = $pdo->prepare("UPDATE service_orders SET entry_doc_number = ? WHERE id = ?");
         $stmtUpdate->execute([$next_val, $id]);
         
         $pdo->commit();
-        $order['exit_doc_number'] = $next_val;
+        $order['entry_doc_number'] = $next_val;
     } catch (Exception $e) {
         $pdo->rollBack();
-        // Continue without number if error, but ideally this shouldn't happen
+        // Continue without number if error
     }
 }
 ?>
@@ -90,7 +79,7 @@ if (empty($order['exit_doc_number'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Entrega #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></title>
+    <title>Ingreso #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></title>
     <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -223,8 +212,6 @@ if (empty($order['exit_doc_number'])) {
         }
         .equip-table th { background: var(--header-bg); font-weight: bold; text-transform: uppercase; }
         
-
-
         /* COMMENTS */
         .comments-box {
             border: 1px solid var(--border-color);
@@ -237,7 +224,6 @@ if (empty($order['exit_doc_number'])) {
 
         /* SIGNATURES */
         .signatures-area {
-            /* margin-top managed by bottom-section */
             padding-top: 10px;
             display: flex;
             justify-content: space-between;
@@ -253,14 +239,6 @@ if (empty($order['exit_doc_number'])) {
             margin-bottom: 5px;
         }
         
-        /* FOOTER PAGE */
-        .page-footer {
-            border-top: 1px solid var(--border-color);
-            padding-top: 5px;
-            text-align: right;
-            font-size: 9px;
-        }
-        
         .bottom-section {
             margin-top: auto;
             width: 100%;
@@ -272,7 +250,7 @@ if (empty($order['exit_doc_number'])) {
             text-align: justify;
             border: 1px solid var(--border-color);
             padding: 5px;
-            margin-bottom: 20px; /* Space between legal text and signatures */
+            margin-bottom: 20px;
         }
 
         @media print {
@@ -283,7 +261,7 @@ if (empty($order['exit_doc_number'])) {
                 box-shadow: none; 
                 margin: 0; 
                 width: 100%; 
-                height: 270mm; /* Safe zone A4 */
+                height: 270mm; 
                 padding: 10mm 15mm; 
                 page-break-after: avoid; 
                 page-break-inside: avoid;
@@ -292,16 +270,16 @@ if (empty($order['exit_doc_number'])) {
                 justify-content: flex-start;
                 overflow: visible; 
             }
-            body { overflow: hidden; } /* Prevent accidental scroll/2nd page */
-            a[href]:after { content: none !important; }
+            body { overflow: hidden; }
         }
     </style>
 </head>
 <body>
 
     <div class="actions">
+        <!-- If editing, go back to edit, else go back to index -->
+        <a href="entry.php?edit=<?php echo $id; ?>" class="btn btn-secondary">Volver</a>
         <button onclick="window.print()" class="btn btn-primary">Imprimir</button>
-        <a href="exit.php" class="btn btn-secondary">Salir</a>
     </div>
 
     <div class="paper">
@@ -314,13 +292,13 @@ if (empty($order['exit_doc_number'])) {
                 <div style="font-weight: bold; font-size: 12px; margin-top: 5px;"><?php echo htmlspecialchars($company_name); ?></div>
             </div>
             <div class="header-col header-center">
-                <h2>ENTREGA DE EQUIPOS</h2>
+                <h2>RECEPCIÓN DE EQUIPOS</h2>
                 <h3>SOPORTE TÉCNICO</h3>
                 <p>Tel: <?php echo htmlspecialchars($company_phone); ?> | Email: <?php echo htmlspecialchars($company_email); ?></p>
             </div>
             <div class="header-col header-right">
-                <div class="doc-box"><?php echo str_pad($order['exit_doc_number'] ?? 0, 5, '0', STR_PAD_LEFT); ?></div>
-                <div style="font-size: 10px;">Doc. Salida</div>
+                <div class="doc-box"><?php echo str_pad($order['entry_doc_number'] ?? 0, 5, '0', STR_PAD_LEFT); ?></div>
+                <div style="font-size: 10px;">Doc. Entrada</div>
             </div>
         </div>
 
@@ -331,7 +309,7 @@ if (empty($order['exit_doc_number'])) {
                 <div>
                     <div class="info-row">
                         <div class="info-label">Fecha:</div>
-                        <div class="info-val"><?php echo date('d/m/Y h:i:s A'); ?></div>
+                        <div class="info-val"><?php echo date('d/m/Y h:i:s A', strtotime($order['entry_date'])); ?></div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Cliente:</div>
@@ -356,88 +334,75 @@ if (empty($order['exit_doc_number'])) {
         </div>
 
         <!-- EQUIPMENT TABLE -->
-        <div class="section-header">SALIDA DE 1 EQUIPO(S)</div>
+        <div class="section-header">INGRESO DE EQUIPO</div>
         <table class="equip-table">
             <thead>
                 <tr>
-                    <th>INGRESO</th>
+                <tr>
                     <th>MARCA</th>
                     <th>MODELO</th>
-                    <th>SUBMODELO</th>
                     <th># SERIE</th>
-                    <th>DESCRIPCION</th>
+                    <th>TIPO DE SERVICIO</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td><?php echo date('d/m/Y', strtotime($order['entry_date'])); ?></td>
                     <td><?php echo htmlspecialchars($order['brand']); ?></td>
-                    <td><?php echo htmlspecialchars($order['model']); ?></td>
-                    <td>-</td>
+                    <td>
+                        <?php echo htmlspecialchars($order['model']); ?>
+                        <?php if(!empty($order['submodel'])): ?>
+                            <div style="font-size: 9px; color: #555;"><?php echo htmlspecialchars($order['submodel']); ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td><?php echo htmlspecialchars($order['serial_number']); ?></td>
-                    <td><?php echo htmlspecialchars($order['problem_reported']); ?></td>
-                </tr>
-                <tr>
-                    <td colspan="2" style="font-weight: bold;"># CASO: <?php echo $order['id']; ?></td>
-                    <td colspan="2" style="font-weight: bold;"># DIAGNOSTICO: <?php echo $order['diagnosis_number'] ? str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></td>
-                    <td colspan="2" style="font-weight: bold;"># REPARACION: <?php echo $order['repair_number'] ? str_pad($order['repair_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></td>
+                    <td>
+                        <?php 
+                            if ($order['service_type'] == 'warranty') echo 'GARANTÍA';
+                            else echo 'SERVICIO';
+                        ?>
+                    </td>
                 </tr>
             </tbody>
         </table>
+        
+        <div class="section-header">ACCESORIOS RECIBIDOS</div>
+        <div class="comments-box" style="min-height: 25px;">
+             <?php echo htmlspecialchars($order['accessories_received']); ?>
+        </div>
 
-        <!-- COMMENTS -->
-        <div class="section-header">COMENTARIOS</div>
+        <!-- PROBLEM DESC -->
+        <div class="section-header">PROBLEMA REPORTADO / SERVICIO SOLICITADO</div>
+        <div class="comments-box">
+            <?php echo nl2br(htmlspecialchars($order['problem_reported'])); ?>
+        </div>
+
+        <!-- NOTES -->
+        <div class="section-header">OBSERVACIONES DE INGRESO</div>
         <div class="comments-box">
             <?php 
-                $hasContent = false;
-                if ($deliveryComments) {
-                    echo nl2br(htmlspecialchars($deliveryComments));
-                    $hasContent = true;
-                }
-                
-                if ($order['parts_replaced']) {
-                    if ($hasContent) echo "<br><br>";
-                    echo "<strong>Repuestos:</strong> " . htmlspecialchars($order['parts_replaced']);
-                    $hasContent = true;
-                }
-                
-                if (!$hasContent) {
-                    echo "&nbsp;";
-                }
+                echo $order['entry_notes'] ? nl2br(htmlspecialchars($order['entry_notes'])) : 'Ninguna';
             ?>
         </div>
         
         <div class="bottom-section">
             <div class="legal-footer">
-                <?php 
-                    $footer_txt = htmlspecialchars($print_footer_text);
-                    $footer_txt = str_replace('Declaración de Conformidad:', '<strong>Declaración de Conformidad:</strong>', $footer_txt);
-                    echo nl2br($footer_txt); 
-                ?>
+                <?php echo nl2br(htmlspecialchars($print_footer_text)); ?>
             </div>
 
             <!-- SIGNATURES -->
             <div class="signatures-area">
                 <div class="sig-box">
-                    <!-- Space for signature -->
                     <div style="height: 20px;"></div>
                     <div class="sig-line"></div>
-                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Entrega Conforme</div>
-                    <div style="font-size: 10px;"><?php echo htmlspecialchars($order['delivered_by'] ?? 'Taller Mastertec'); ?></div>
-                    <div style="font-size: 10px; font-weight: bold;">Taller</div>
+                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Recibí Conforme (Taller)</div>
+                    <div style="font-size: 10px;"><?php echo htmlspecialchars($received_by); ?></div>
                 </div>
                 
                  <div class="sig-box">
-                    <!-- Space for signature -->
                     <div style="height: 20px;"></div>
                     <div class="sig-line"></div>
-                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Recibe Conforme</div>
-                    <div style="text-align: center; margin-top: 5px;">
-                        <?php echo htmlspecialchars($receiverName); ?>
-                    </div>
-                     <div style="text-align: center; margin-top: 5px;">
-                        <?php echo htmlspecialchars($receiverId); ?>
-                    </div>
+                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Entregué Conforme (Cliente)</div>
+                    <div style="font-size: 10px;"><?php echo htmlspecialchars($order['client_name']); ?></div>
                 </div>
             </div>
         </div>

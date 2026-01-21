@@ -19,14 +19,26 @@ if (!$id) {
 $success_msg = '';
 $error_msg = '';
 
-// Status updates are disabled for warranties as per user request.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    if ($_POST['action'] === 'update_status') {
+        $new_status = clean($_POST['status']);
+        $note = clean($_POST['note']);
+        
+        try {
+            update_service_status($pdo, $id, $new_status, $note, $_SESSION['user_id']);
+            $success_msg = "Estado actualizado correctamente.";
+        } catch (Exception $e) {
+            $error_msg = "Error al actualizar: " . $e->getMessage();
+        }
+    }
+}
 
 // Fetch Order Details
 $stmt = $pdo->prepare("
     SELECT 
         so.*,
         c.name as client_name, c.phone, c.email,
-        e.brand, e.model, e.serial_number, e.type as equipment_type,
+        e.brand, e.model, e.submodel, e.serial_number, e.type as equipment_type,
         w.product_code, w.sales_invoice_number, w.master_entry_invoice, w.master_entry_date, w.supplier_name
     FROM service_orders so
     JOIN clients c ON so.client_id = c.id
@@ -242,20 +254,34 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                     </a>
                     <span style="font-size: 0.9rem; color: var(--p-text-muted);"><?php echo $statusLabels[$order['status']] ?? $order['status']; ?></span>
                 </div>
-                <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.25rem;">Orden #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></h1>
+                <h1 style="font-size: 2.5rem; font-weight: 700; margin-bottom: 0.25rem;">Caso #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></h1>
+                <div style="font-size: 0.9rem; margin-top: 0.25rem; margin-bottom: 0.5rem; display: flex; gap: 1rem;">
+                    <?php if($order['diagnosis_number']): ?>
+                        <span style="color: #fbbf24;">Diag: #<?php echo str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT); ?></span>
+                    <?php endif; ?>
+                    <?php if($order['repair_number']): ?>
+                        <span style="color: #34d399;">Rep: #<?php echo str_pad($order['repair_number'], 5, '0', STR_PAD_LEFT); ?></span>
+                    <?php endif; ?>
+                    <?php if($order['exit_doc_number']): ?>
+                        <span style="color: #94a3b8;">Salida: #<?php echo str_pad($order['exit_doc_number'], 5, '0', STR_PAD_LEFT); ?></span>
+                    <?php endif; ?>
+                </div>
                 <p style="color: var(--p-text-muted); font-size: 0.9rem;">Ingresado el <?php echo date('d/m/Y H:i', strtotime($order['entry_date'])); ?></p>
             </div>
             
             <div style="text-align: right;">
-                <a href="print.php?id=<?php echo $id; ?>" target="_blank" class="btn btn-primary" style="margin-bottom: 0.5rem; text-decoration: none; display: inline-flex;">
-                    <i class="ph ph-printer"></i> Imprimir
+                <a href="../equipment/print_entry.php?id=<?php echo $id; ?>" target="_blank" class="btn btn-primary" style="margin-bottom: 0.5rem; text-decoration: none; display: inline-flex;">
+                    <i class="ph ph-printer"></i> Imprimir Hoja Entrada
                 </a>
-                <?php if($order['sales_invoice_number']): ?>
-                    <div>
-                        <span style="color: var(--p-text-muted); font-size: 0.9rem;">Factura:</span>
-                        <strong style="font-size: 1.1rem; color: var(--p-text-main);"><?php echo htmlspecialchars($order['sales_invoice_number']); ?></strong>
-                    </div>
-                <?php endif; ?>
+                <?php 
+                    $invoice_show = $order['sales_invoice_number'] ?: $order['invoice_number'];
+                ?>
+                <div style="margin-top: 0.5rem;">
+                    <span style="color: var(--p-text-muted); font-size: 0.9rem;">Factura:</span>
+                    <strong style="font-size: 1.1rem; color: var(--p-text-main);">
+                        <?php echo $invoice_show ? htmlspecialchars($invoice_show) : '<span style="color:var(--p-text-muted); font-weight:normal;">Sin Factura</span>'; ?>
+                    </strong>
+                </div>
             </div>
         </div>
 
@@ -284,14 +310,30 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                 <div class="info-value highlight"><?php echo htmlspecialchars($order['client_name']); ?></div>
                             </div>
                             
-                            <div style="display: flex; gap: 1rem;">
-                                <div class="info-group">
+                            <div style="display: flex; gap: 1rem; margin-bottom: 1.25rem;">
+                                <div class="info-group" style="margin-bottom: 0;">
                                     <span class="info-label">Teléfono</span>
                                     <div class="info-value"><i class="ph ph-phone"></i> <?php echo htmlspecialchars($order['phone']); ?></div>
                                 </div>
-                                <div class="info-group">
+                                <div class="info-group" style="margin-bottom: 0;">
                                     <span class="info-label">Email</span>
                                     <div class="info-value"><i class="ph ph-envelope"></i> <?php echo htmlspecialchars($order['email']); ?></div>
+                                </div>
+                            </div>
+
+                            <!-- Service Type Indicator -->
+                             <div class="info-group">
+                                <span class="info-label">Tipo de Servicio</span>
+                                <div>
+                                    <?php if($order['service_type'] === 'warranty'): ?>
+                                        <span style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.85rem; font-weight: 600; background: rgba(99, 102, 241, 0.1); color: #818cf8; padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid rgba(99, 102, 241, 0.2);">
+                                            <i class="ph ph-shield-check"></i> Garantía
+                                        </span>
+                                    <?php else: ?>
+                                        <span style="display: inline-flex; align-items: center; gap: 0.25rem; font-size: 0.85rem; font-weight: 600; background: rgba(59, 130, 246, 0.1); color: #60a5fa; padding: 0.25rem 0.5rem; border-radius: 4px; border: 1px solid rgba(59, 130, 246, 0.2);">
+                                            <i class="ph ph-wrench"></i> Servicio
+                                        </span>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -301,11 +343,19 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                             <h4 style="color: var(--p-primary); font-size: 0.9rem; margin-bottom: 1rem;">Equipo</h4>
                             
                             <div class="info-group">
-                                <span class="info-label">Equipo</span>
+                                <span class="info-label">Tipo</span>
+                                <div class="info-value"><?php echo htmlspecialchars($order['equipment_type']); ?></div>
+                            </div>
+
+                            <div class="info-group">
+                                <span class="info-label">Marca / Modelo</span>
                                 <div class="info-value highlight">
-                                    <?php echo htmlspecialchars($order['equipment_type']); ?> <?php echo htmlspecialchars($order['brand']); ?>
+                                    <?php echo htmlspecialchars($order['brand']); ?>
                                 </div>
                                 <div class="info-value text-muted"><?php echo htmlspecialchars($order['model']); ?></div>
+                                <?php if($order['submodel']): ?>
+                                    <div class="info-value text-muted" style="font-size: 0.9rem;"><?php echo htmlspecialchars($order['submodel']); ?></div>
+                                <?php endif; ?>
                             </div>
 
                             <div class="info-group">
@@ -328,13 +378,70 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                             <?php echo nl2br(htmlspecialchars($order['problem_reported'])); ?>
                         </div>
                     </div>
+
+                    <div class="info-grid">
+                        <div class="info-group">
+                            <span class="info-label">Accesorios Recibidos</span>
+                            <div class="problem-box" style="min-height: auto; background: var(--p-bg-input);">
+                                <?php echo htmlspecialchars($order['accessories_received'] ?: 'Ninguno'); ?>
+                            </div>
+                        </div>
+                        
+                        <div class="info-group">
+                            <span class="info-label">Observaciones de Ingreso</span>
+                            <div class="problem-box" style="min-height: auto; background: var(--p-bg-input);">
+                                <?php echo nl2br(htmlspecialchars($order['entry_notes'] ?: 'Ninguna')); ?>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 </div>
 
 
-            <!-- Right Column: History -->
+            <!-- Right Column: History & Actions -->
             <div class="sidebar-sticky">
+                
+                <!-- Status Control -->
+                <?php if($order['status'] !== 'delivered'): ?>
+                <div class="update-card" style="margin-bottom: 1.5rem; border-top: 4px solid var(--p-primary);">
+                    <h3 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.1rem; color: var(--p-text-main);">Actualizar Estado</h3>
+                    <form method="POST">
+                        <input type="hidden" name="action" value="update_status">
+                        
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nuevo Estado</label>
+                            <select name="status" class="modern-select">
+                                <?php foreach($statusLabels as $key => $label): ?>
+                                    <?php if($key !== 'delivered' && $key !== 'cancelled'): ?>
+                                        <option value="<?php echo $key; ?>" <?php echo $order['status'] === $key ? 'selected' : ''; ?>>
+                                            <?php echo $label; ?>
+                                        </option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div style="margin-bottom: 1rem;">
+                            <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nota de Progreso</label>
+                            <textarea name="note" class="modern-textarea" rows="3" placeholder="Ej. Se realizó cambio de repuesto..." required></textarea>
+                        </div>
+
+                        <button type="submit" class="btn-update">
+                            Guardar Cambios
+                        </button>
+                    </form>
+                </div>
+                <?php else: ?>
+                    <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem;">
+                        <i class="ph ph-check-circle" style="font-size: 1.5rem; color: #34d399;"></i>
+                        <div>
+                            <strong style="color: #34d399; display: block;">Garantía Entregada</strong>
+                            <span style="font-size: 0.85rem; color: var(--p-text-muted);">Proceso finalizado.</span>
+                        </div>
+                    </div>
+                <?php endif; ?>
+
                 <div class="form-section">
                     <div class="form-section-header">
                          <i class="ph ph-clock-counter-clockwise"></i> Historial
