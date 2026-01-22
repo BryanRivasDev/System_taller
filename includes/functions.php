@@ -155,8 +155,8 @@ function update_service_status($pdo, $order_id, $new_status, $note, $user_id) {
             $params[] = $next_val;
         }
         
-        // 2. Repair Number: Assign when moving to 'ready' AND not yet assigned
-        if ($new_status === 'ready' && is_null($order['repair_number'])) {
+        // 2. Repair Number: Assign when moving to 'in_repair' AND not yet assigned
+        if ($new_status === 'in_repair' && is_null($order['repair_number'])) {
             $next_val = get_next_sequence($pdo, 'repair');
             $updates[] = "repair_number = ?";
             $params[] = $next_val;

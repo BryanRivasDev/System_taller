@@ -31,11 +31,18 @@ $print_footer_text = $settings['print_footer_text'] ?? 'Declaración de Conformi
 $stmt = $pdo->prepare("
     SELECT 
         so.*,
-        c.name as client_name, c.phone, c.email, c.tax_id, c.address,
+        c_contact.name as contact_name, c_contact.phone, c_contact.email, c_contact.tax_id, c_contact.address,
+        (SELECT c_o.name 
+         FROM service_orders so_o 
+         JOIN clients c_o ON so_o.client_id = c_o.id 
+         WHERE so_o.equipment_id = so.equipment_id 
+           AND (so_o.service_type = 'warranty' OR so_o.problem_reported = 'Garantía Registrada')
+         ORDER BY so_o.created_at ASC 
+         LIMIT 1) as owner_name,
         e.brand, e.model, e.serial_number, e.type as equipment_type,
         u.username as delivered_by
     FROM service_orders so
-    JOIN clients c ON so.client_id = c.id
+    JOIN clients c_contact ON so.client_id = c_contact.id
     JOIN equipments e ON so.equipment_id = e.id
     LEFT JOIN users u ON so.authorized_by_user_id = u.id
     WHERE so.id = ?
@@ -43,17 +50,52 @@ $stmt = $pdo->prepare("
 $stmt->execute([$id]);
 $order = $stmt->fetch();
 
+// Fallback if no specific warranty order found
+if ($order && !$order['owner_name']) {
+    $stmtFallback = $pdo->prepare("SELECT c.name FROM equipments e JOIN clients c ON e.client_id = c.id WHERE e.id = ?");
+    $stmtFallback->execute([$order['equipment_id']]);
+    $order['owner_name'] = $stmtFallback->fetchColumn() ?: $order['contact_name'];
+}
+
 if (!$order) {
     die("Orden no encontrada.");
 }
 
-// Fetch Delivery Note
-$stmtNote = $pdo->prepare("SELECT notes FROM service_order_history WHERE service_order_id = ? AND action = 'delivered' ORDER BY created_at DESC LIMIT 1");
-$stmtNote->execute([$id]);
-$fullDeliveryNote = $stmtNote->fetchColumn();
+// Fetch History for Notes (Diagnosis, Repair, Delivery)
+$stmtHistory = $pdo->prepare("SELECT action, notes FROM service_order_history WHERE service_order_id = ? ORDER BY created_at ASC");
+$stmtHistory->execute([$id]);
+$allHistory = $stmtHistory->fetchAll();
+
+$diagnosisNotesArr = [];
+$repairNotesArr = [];
+$fullDeliveryNote = '';
+
+// Check if basic fields have info first
+if (!empty($order['diagnosis_notes'])) $diagnosisNotesArr[] = $order['diagnosis_notes'];
+if (!empty($order['work_done'])) $repairNotesArr[] = $order['work_done'];
+
+foreach ($allHistory as $h) {
+    if (($h['action'] === 'diagnosing' || $h['action'] === 'pending_approval') && !empty($h['notes'])) {
+        // Avoid duplicates if same as DB field (simple check)
+        if (!in_array($h['notes'], $diagnosisNotesArr)) {
+             $diagnosisNotesArr[] = $h['notes'];
+        }
+    }
+    if (($h['action'] === 'in_repair' || $h['action'] === 'ready') && !empty($h['notes'])) {
+         if (!in_array($h['notes'], $repairNotesArr)) {
+             $repairNotesArr[] = $h['notes'];
+        }
+    }
+    if ($h['action'] === 'delivered') {
+        $fullDeliveryNote = $h['notes'];
+    }
+}
+
+$diagnosisNote = implode("\n", $diagnosisNotesArr);
+$repairNote = implode("\n", $repairNotesArr);
 
 // Parse Delivery Note
-$receiverName = $order['client_name']; 
+$receiverName = $order['contact_name']; 
 $deliveryComments = '';
 $receiverId = '';
 
@@ -331,17 +373,17 @@ if (empty($order['exit_doc_number'])) {
                 <div>
                     <div class="info-row">
                         <div class="info-label">Fecha:</div>
-                        <div class="info-val"><?php echo date('d/m/Y h:i:s A'); ?></div>
+                        <div class="info-val"><?php echo $order['exit_date'] ? date('d/m/Y h:i:s A', strtotime($order['exit_date'])) : date('d/m/Y h:i:s A'); ?></div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Cliente:</div>
-                        <div class="info-val"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                        <div class="info-val"><?php echo htmlspecialchars($order['owner_name']); ?></div>
                     </div>
                 </div>
                 <div>
                     <div class="info-row">
                         <div class="info-label">Contacto:</div>
-                        <div class="info-val"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                        <div class="info-val"><?php echo htmlspecialchars($order['contact_name']); ?></div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Celular:</div>
@@ -379,8 +421,22 @@ if (empty($order['exit_doc_number'])) {
                 </tr>
                 <tr>
                     <td colspan="2" style="font-weight: bold;"># CASO: <?php echo $order['id']; ?></td>
-                    <td colspan="2" style="font-weight: bold;"># DIAGNOSTICO: <?php echo $order['diagnosis_number'] ? str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></td>
-                    <td colspan="2" style="font-weight: bold;"># REPARACION: <?php echo $order['repair_number'] ? str_pad($order['repair_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></td>
+                    <td colspan="2" style="vertical-align: top;">
+                        <div style="font-weight: bold;"># DIAGNOSTICO: <?php echo $order['diagnosis_number'] ? str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></div>
+                        <?php if($diagnosisNote): ?>
+                            <div style="margin-top: 4px; font-weight: normal; font-size: 10px; font-style: italic; color: #333;">
+                                <?php echo nl2br(htmlspecialchars($diagnosisNote)); ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
+                    <td colspan="2" style="vertical-align: top;">
+                        <div style="font-weight: bold;"># REPARACION: <?php echo $order['repair_number'] ? str_pad($order['repair_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></div>
+                         <?php if($repairNote): ?>
+                            <div style="margin-top: 4px; font-weight: normal; font-size: 10px; font-style: italic; color: #333;">
+                                <?php echo nl2br(htmlspecialchars($repairNote)); ?>
+                            </div>
+                        <?php endif; ?>
+                    </td>
                 </tr>
             </tbody>
         </table>

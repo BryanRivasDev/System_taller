@@ -103,14 +103,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $sales_invoice = clean($_POST['sales_invoice_number'] ?? '');
     $master_invoice = clean($_POST['master_entry_invoice'] ?? '');
     $master_date = clean($_POST['master_entry_date'] ?? '');
-    $master_date = clean($_POST['master_entry_date'] ?? '');
     $supplier = clean($_POST['supplier_name'] ?? '');
     
     // Warranty Specifics
     $warranty_end_date = clean($_POST['warranty_end_date'] ?? null);
     $warranty_duration = clean($_POST['warranty_duration'] ?? 0);
     $warranty_period = clean($_POST['warranty_period'] ?? 'months');
-    $terms = "$warranty_duration $warranty_period"; // Store as string e.g. "12 months"
+    
+    // Fallback: If JS didn't populate end_date but we have duration, calculate it here
+    if (empty($warranty_end_date) && $warranty_duration > 0) {
+        $calc_date = new DateTime();
+        if ($warranty_period === 'days') {
+            $calc_date->modify("+{$warranty_duration} days");
+        } elseif ($warranty_period === 'weeks') {
+            $weeks = $warranty_duration * 7;
+            $calc_date->modify("+{$weeks} days");
+        } elseif ($warranty_period === 'months') {
+             $calc_date->modify("+{$warranty_duration} months");
+        } elseif ($warranty_period === 'years') {
+             $calc_date->modify("+{$warranty_duration} years");
+        }
+        $warranty_end_date = $calc_date->format('Y-m-d');
+    }
+
+    $terms = "$warranty_duration $warranty_period"; // Store as string e.g. "12 months" (Note: terms column removed from DB insert, but useful for logic if needed)
     
     // Standard fields (might be optional in warranty mode)
     $problem = clean($_POST['problem_reported'] ?? 'Garantía Registrada'); 
@@ -159,10 +175,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->beginTransaction();
 
             if ($order_id) {
-                // UPDATE logic (Simplified for brevity, ensuring warranties table update)
-                // Update Equipment
-                $stmtEq = $pdo->prepare("UPDATE equipments SET client_id = ?, brand = ?, model = ?, submodel = ?, serial_number = ?, type = ? WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
-                $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type, $order_id]);
+                // Update Equipment - Define owner ONLY if it's warranty registration or a 'Garantía' type order
+                // OR if the equipment doesn't have an owner yet.
+                $is_warranty_action = ($is_warranty_mode || $service_type === 'warranty');
+                
+                // Get current equipment owner to check if it's empty
+                $stmtEqCheck = $pdo->prepare("SELECT client_id FROM equipments WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
+                $stmtEqCheck->execute([$order_id]);
+                $current_owner = $stmtEqCheck->fetchColumn();
+
+                if ($is_warranty_action || empty($current_owner)) {
+                    $stmtEq = $pdo->prepare("UPDATE equipments SET client_id = ?, brand = ?, model = ?, submodel = ?, serial_number = ?, type = ? WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
+                    $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type, $order_id]);
+                } else {
+                    // Standard repair on existing equipment: preserve owner, just update details
+                    $stmtEq = $pdo->prepare("UPDATE equipments SET brand = ?, model = ?, submodel = ?, serial_number = ?, type = ? WHERE id = (SELECT equipment_id FROM service_orders WHERE id = ?)");
+                    $stmtEq->execute([$brand, $model, $submodel, $serial_number, $type, $order_id]);
+                }
 
                 // Update Order
                 // For warranties, we might strictly use sales_invoice as the main reference or user supplied 'invoice_number'
@@ -208,9 +237,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             } else {
                 // INSERT NEW
-                $stmtEq = $pdo->prepare("INSERT INTO equipments (client_id, brand, model, submodel, serial_number, type) VALUES (?, ?, ?, ?, ?, ?)");
-                $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type]);
-                $equipment_id = $pdo->lastInsertId();
+                // First, check if equipment with this Serial Number already exists
+                $stmtEqCheck = $pdo->prepare("SELECT id, client_id FROM equipments WHERE serial_number = ? LIMIT 1");
+                $stmtEqCheck->execute([$serial_number]);
+                $existing_eq = $stmtEqCheck->fetch();
+
+                if ($existing_eq) {
+                    $equipment_id = $existing_eq['id'];
+                    $is_warranty_action = ($is_warranty_mode || $service_type === 'warranty');
+                    
+                    if ($is_warranty_action || empty($existing_eq['client_id'])) {
+                        $stmtEqUpd = $pdo->prepare("UPDATE equipments SET client_id = ?, brand = ?, model = ?, submodel = ?, type = ? WHERE id = ?");
+                        $stmtEqUpd->execute([$client_id, $brand, $model, $submodel, $type, $equipment_id]);
+                    } else {
+                        // Standard repair on existing equipment: preserve owner, just update details
+                        $stmtEqUpd = $pdo->prepare("UPDATE equipments SET brand = ?, model = ?, submodel = ?, type = ? WHERE id = ?");
+                        $stmtEqUpd->execute([$brand, $model, $submodel, $type, $equipment_id]);
+                    }
+                } else {
+                    // Truly new equipment
+                    $stmtEq = $pdo->prepare("INSERT INTO equipments (client_id, brand, model, submodel, serial_number, type) VALUES (?, ?, ?, ?, ?, ?)");
+                    $stmtEq->execute([$client_id, $brand, $model, $submodel, $serial_number, $type]);
+                    $equipment_id = $pdo->lastInsertId();
+                }
                 
                 $main_ref = $is_warranty_mode ? $sales_invoice : $invoice_number;
 
@@ -219,8 +268,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $order_id = $pdo->lastInsertId();
 
                 if ($is_warranty_mode) {
-                    $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status, end_date, duration_months, terms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)");
-                    $stmtW->execute([$order_id, $equipment_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $warranty_end_date, $warranty_duration, $terms]);
+                    $stmtW = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, notes, status, end_date) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)");
+                    $stmtW->execute([$order_id, $equipment_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, $notes, $warranty_end_date]);
                     
                     $stmtHist = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'received', 'Garantía Registrada', ?)");
                     $stmtHist->execute([$order_id, $_SESSION['user_id']]);
@@ -232,6 +281,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
 
                 $pdo->commit();
+                
+                // Redirect logic
+                if ($is_warranty_mode) {
+                    // Stay on page with success message
+                    // We already set $success variable which will be displayed
+                } else {
+                    // For standard service, redirect to Print Entry
+                    header("Location: print_entry.php?id=" . $order_id);
+                    exit;
+                }
             }
         } catch (Exception $e) {
             $pdo->rollBack();
@@ -272,12 +331,14 @@ require_once '../../includes/sidebar.php';
 
     <style>
         .modern-form-container form {
-            display: grid;
-            gap: 2.5rem;
+            display: flex;
+            flex-direction: column;
+            gap: 5rem; /* Large spacing */
         }
         .form-section {
             background: var(--bg-card);
             border: 1px solid var(--border-color);
+            margin-bottom: 2rem; /* Extra buffer */
             border-radius: 12px; /* Smoother radius */
             padding: 1.5rem;
             position: relative;
@@ -490,20 +551,22 @@ require_once '../../includes/sidebar.php';
 
                         <!-- Email -->
                         <div class="form-group">
-                            <label class="form-label">Correo Electrónico *</label>
+                            <label class="form-label">Correo Electrónico</label>
                             <div class="input-group">
-                                <input type="email" name="client_email" id="client_email_std" class="form-control" placeholder="cliente@ejemplo.com" required value="<?php echo $edit_order ? ($edit_order['email'] ?? '') : ''; ?>">
+                                <input type="email" name="client_email" id="client_email_std" class="form-control" placeholder="cliente@ejemplo.com" value="<?php echo $edit_order ? ($edit_order['email'] ?? '') : ''; ?>">
                                 <i class="ph ph-envelope input-icon"></i>
                             </div>
                         </div>
 
                         <!-- Address -->
                         <div class="form-group">
-                            <label class="form-label">Dirección *</label>
+                            <label class="form-label">Dirección</label>
                             <div class="input-group">
-                                <input type="text" name="client_address" id="client_address_std" class="form-control" placeholder="Dirección completa" required value="<?php echo $edit_order ? ($edit_order['address'] ?? '') : ''; ?>">
+                                <input type="text" name="client_address" id="client_address_std" class="form-control" placeholder="Dirección completa" value="<?php echo $edit_order ? ($edit_order['address'] ?? '') : ''; ?>">
                                 <i class="ph ph-map-pin input-icon"></i>
                             </div>
+                        </div>
+
                         </div>
                     </div>
                 </div>
@@ -515,6 +578,19 @@ require_once '../../includes/sidebar.php';
                     </div>
                     
                     <div class="modern-grid" style="grid-template-columns: repeat(2, 1fr);">
+                         
+                        <!-- Serial Number (Moved to Top) -->
+                        <div class="form-group">
+                            <label class="form-label">Serie (S/N) *</label>
+                            <div class="input-group" style="display: flex; align-items: center; gap: 0;">
+                                <input type="text" name="serial_number" id="serial_number_std" class="form-control" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>" style="border-top-right-radius: 0; border-bottom-right-radius: 0; padding-left: 0.5rem;">
+                                <button type="button" class="btn-verify-serial" data-target="#serial_number_std" title="Verificar Garantía" style="border: 1px solid var(--border-color); border-left: none; background: var(--bg-card); cursor: pointer; color: var(--primary-500); display: flex; align-items: center; padding: 0.625rem 1rem; border-top-right-radius: 6px; border-bottom-right-radius: 6px; height: 100%;">
+                                    <i class="ph ph-magnifying-glass" style="font-size: 1.2rem;"></i>
+                                </button>
+                            </div>
+                            <div class="warranty-status-msg" style="font-size:0.9rem; font-weight:500; margin-top:0.5rem; min-height:0;"></div>
+                        </div>
+
                          <div class="form-group">
                             <label class="form-label">Cliente (Búsqueda)</label>
                             <input type="text" id="equipment_client_display" class="form-control" readonly placeholder="Se rellenará automáticamente" value="<?php echo $edit_order['client_name_display'] ?? ''; ?>">
@@ -537,16 +613,6 @@ require_once '../../includes/sidebar.php';
                          <div class="form-group">
                             <label class="form-label">Submodelo</label>
                             <input type="text" name="submodel" class="form-control" placeholder="Ej. Versión específica" value="<?php echo $edit_order['submodel'] ?? ''; ?>">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Serie (S/N) *</label>
-                            <div class="input-group" style="display: flex; align-items: center; gap: 0;">
-                                <input type="text" name="serial_number" id="serial_number_std" class="form-control" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>" style="border-top-right-radius: 0; border-bottom-right-radius: 0; padding-left: 0.5rem;">
-                                <button type="button" class="btn-verify-serial" data-target="#serial_number_std" title="Verificar Garantía" style="border: 1px solid var(--border-color); border-left: none; background: var(--bg-card); cursor: pointer; color: var(--primary-500); display: flex; align-items: center; padding: 0.625rem 1rem; border-top-right-radius: 6px; border-bottom-right-radius: 6px; height: 100%;">
-                                    <i class="ph ph-magnifying-glass" style="font-size: 1.2rem;"></i>
-                                </button>
-                            </div>
-                            <div class="warranty-status-msg" style="font-size:0.9rem; font-weight:500; margin-top:0.5rem; min-height:1.5rem;"></div>
                         </div>
                         
                          <div class="form-group col-span-2">
@@ -695,7 +761,7 @@ require_once '../../includes/sidebar.php';
 
             <?php endif; ?>
 
-            <div style="text-align: right; margin-top: -1rem;">
+            <div style="text-align: right; margin-top: -4rem;">
                 <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-weight: 600;">
                     <i class="ph ph-floppy-disk"></i> <?php echo $edit_order ? 'Guardar Cambios' : 'Guardar Registro'; ?>
                 </button>
@@ -860,6 +926,9 @@ require_once '../../includes/sidebar.php';
 
                 durationInput.addEventListener('input', calculateEndDate);
                 periodSelect.addEventListener('change', calculateEndDate);
+                
+                // Trigger immediately in case of pre-filled values or browser history
+                calculateEndDate();
             }
         });
     </script>

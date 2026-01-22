@@ -31,21 +31,33 @@ $print_footer_text = $settings['print_footer_text'] ?? 'Condiciones de Servicio:
 $stmt = $pdo->prepare("
     SELECT 
         so.*,
-        c.name as client_name, c.phone, c.email, c.tax_id, c.address,
+        c_contact.name as contact_name, c_contact.phone, c_contact.email, c_contact.tax_id, c_contact.address,
+        (SELECT c_o.name 
+         FROM service_orders so_o 
+         JOIN clients c_o ON so_o.client_id = c_o.id 
+         WHERE so_o.equipment_id = so.equipment_id 
+           AND (so_o.service_type = 'warranty' OR so_o.problem_reported = 'Garantía Registrada')
+         ORDER BY so_o.created_at ASC 
+         LIMIT 1) as owner_name,
         e.brand, e.model, e.submodel, e.serial_number, e.type as equipment_type,
         u.username as received_by
     FROM service_orders so
-    JOIN clients c ON so.client_id = c.id
+    JOIN clients c_contact ON so.client_id = c_contact.id
     JOIN equipments e ON so.equipment_id = e.id
     LEFT JOIN users u ON u.id = ? 
     WHERE so.id = ?
 ");
 // Note: 'received_by' logic usually tracks who created it. 
-// Standard schema tracks 'assigned_tech_id' or 'authorized_by_user_id', but creator is implicit in history or logs.
-// For now, we'll try to get the user who created the 'received' history event.
 
-$stmt->execute([$_SESSION['user_id'], $id]); // Just passing session user as fallback, but let's correct query below
+$stmt->execute([$_SESSION['user_id'], $id]); 
 $order = $stmt->fetch();
+
+// Fallback if no specific warranty order found
+if (!$order['owner_name']) {
+    $stmtFallback = $pdo->prepare("SELECT c.name FROM equipments e JOIN clients c ON e.client_id = c.id WHERE e.id = ?");
+    $stmtFallback->execute([$order['equipment_id']]);
+    $order['owner_name'] = $stmtFallback->fetchColumn() ?: $order['contact_name'];
+}
 
 if (!$order) {
     die("Orden no encontrada.");
@@ -278,7 +290,7 @@ if (empty($order['entry_doc_number'])) {
 
     <div class="actions">
         <!-- If editing, go back to edit, else go back to index -->
-        <a href="entry.php?edit=<?php echo $id; ?>" class="btn btn-secondary">Volver</a>
+        <button onclick="history.back()" class="btn btn-secondary">Volver</button>
         <button onclick="window.print()" class="btn btn-primary">Imprimir</button>
     </div>
 
@@ -313,13 +325,16 @@ if (empty($order['entry_doc_number'])) {
                     </div>
                     <div class="info-row">
                         <div class="info-label">Cliente:</div>
-                        <div class="info-val"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                        <div class="info-val"><?php echo htmlspecialchars($order['owner_name']); ?></div>
                     </div>
                 </div>
                 <div>
                     <div class="info-row">
                         <div class="info-label">Contacto:</div>
-                        <div class="info-val"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                        <div class="info-val"><?php echo htmlspecialchars($order['contact_name']); ?></div>
+                    </div>
+                    <div class="info-row">
+                        <div class="info-val"><?php echo htmlspecialchars($order['tax_id'] ?? '-'); ?></div>
                     </div>
                     <div class="info-row">
                         <div class="info-label">Celular:</div>
@@ -402,7 +417,7 @@ if (empty($order['entry_doc_number'])) {
                     <div style="height: 20px;"></div>
                     <div class="sig-line"></div>
                     <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Entregué Conforme (Cliente)</div>
-                    <div style="font-size: 10px;"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                    <div style="font-size: 10px;"><?php echo htmlspecialchars($order['contact_name']); ?></div>
                 </div>
             </div>
         </div>

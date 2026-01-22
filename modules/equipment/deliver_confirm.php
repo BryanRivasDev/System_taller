@@ -35,29 +35,69 @@ if (!$order) {
 
 // Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $receiver_name = clean($_POST['receiver_name']);
-    $receiver_id = clean($_POST['receiver_id']);
-    $delivery_notes = clean($_POST['delivery_notes']);
+    
+    // RE-ENTRY LOGIC
+    if (isset($_POST['action']) && $_POST['action'] === 'reentry') {
+        // Permission Check
+        if (!can_access_module('equipment_reentry', $pdo)) {
+            die("Acceso denegado.");
+        }
 
-    try {
-        $pdo->beginTransaction();
+        $reentry_reason = clean($_POST['reentry_reason'] ?? '');
+        if (empty($reentry_reason)) {
+            $error = "Debe especificar un motivo para el reingreso.";
+        } else {
+            try {
+                $pdo->beginTransaction();
 
-        // Update Order
-        $stmt = $pdo->prepare("UPDATE service_orders SET status = 'delivered', exit_date = NOW(), authorized_by_user_id = ? WHERE id = ?");
-        $stmt->execute([$_SESSION['user_id'], $id]);
+                // Update Order Status -> 'pending' (En Espera)
+                // Reset exit_date
+                $stmt = $pdo->prepare("UPDATE service_orders SET status = 'pending', exit_date = NULL WHERE id = ?");
+                $stmt->execute([$id]);
 
-        // Log History (with delivery details)
-        $history_note = "Entregado a: $receiver_name ($receiver_id). Notas: $delivery_notes";
-        $stmtH = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'delivered', ?, ?)");
-        $stmtH->execute([$id, $history_note, $_SESSION['user_id']]);
+                // Log History
+                $history_note = "REINGRESO A TALLER. Motivo: $reentry_reason";
+                $stmtH = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'updated', ?, ?)");
+                $stmtH->execute([$id, $history_note, $_SESSION['user_id']]);
 
-        $pdo->commit();
-        header("Location: print_delivery.php?id=" . $id);
-        exit;
+                $pdo->commit();
+                
+                // Redirect to Service View
+                header("Location: ../../modules/services/view.php?id=" . $id);
+                exit;
 
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $error = "Error al procesar la entrega: " . $e->getMessage();
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                $error = "Error al procesar reingreso: " . $e->getMessage();
+            }
+        }
+
+    } else {
+        // STANDARD DELIVERY LOGIC
+        $receiver_name = clean($_POST['receiver_name']);
+        $receiver_id = clean($_POST['receiver_id']);
+        $delivery_notes = clean($_POST['delivery_notes']);
+
+        try {
+            $pdo->beginTransaction();
+
+            // Update Order
+            $stmt = $pdo->prepare("UPDATE service_orders SET status = 'delivered', exit_date = NOW(), authorized_by_user_id = ? WHERE id = ?");
+            $stmt->execute([$_SESSION['user_id'], $id]);
+
+            // Log History (with delivery details)
+            $history_note = "Entregado a: $receiver_name ($receiver_id). Notas: $delivery_notes";
+            $stmtH = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'delivered', ?, ?)");
+            $stmtH->execute([$id, $history_note, $_SESSION['user_id']]);
+
+            $pdo->commit();
+            header("Location: print_delivery.php?id=" . $id);
+            exit;
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error = "Error al procesar la entrega: " . $e->getMessage();
+        }
     }
 }
 
@@ -67,12 +107,22 @@ require_once '../../includes/sidebar.php';
 ?>
 
 <div class="animate-enter" style="max-width: 800px; margin: 0 auto;">
-    <div style="margin-bottom: 2rem;">
-        <a href="exit.php" style="color: var(--text-secondary); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
-            <i class="ph ph-arrow-left"></i> Volver a Salidas
-        </a>
-        <h1>Orden de Salida</h1>
-        <p class="text-muted">Confirma los detalles de la entrega del equipo.</p>
+    <div style="margin-bottom: 2rem; display: flex; justify-content: space-between; align-items: start;">
+        <div>
+            <a href="exit.php" style="color: var(--text-secondary); text-decoration: none; display: flex; align-items: center; gap: 0.5rem; margin-bottom: 1rem;">
+                <i class="ph ph-arrow-left"></i> Volver a Salidas
+            </a>
+            <h1>Orden de Salida</h1>
+            <p class="text-muted">Confirma los detalles de la entrega del equipo.</p>
+        </div>
+        
+        <?php if(can_access_module('equipment_reentry', $pdo)): ?>
+        <div>
+            <button type="button" onclick="openReentryModal()" class="btn" style="background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid var(--warning);">
+                <i class="ph ph-arrow-u-up-left"></i> Reingresar al Taller
+            </button>
+        </div>
+        <?php endif; ?>
     </div>
 
     <?php if(isset($error)): ?>
@@ -97,6 +147,54 @@ require_once '../../includes/sidebar.php';
 
             </div>
         </div>
+
+        <!-- RE-ENTRY MODAL -->
+        <div id="reentryModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center;">
+            <div style="background: var(--bg-card); padding: 2rem; border-radius: 12px; width: 100%; max-width: 500px; border: 1px solid var(--border-color); box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);">
+                <h3 style="margin-top: 0; margin-bottom: 1rem; color: var(--warning); display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="ph ph-warning"></i> Confirmar Reingreso
+                </h3>
+                <p style="color: var(--text-secondary); margin-bottom: 1.5rem; line-height: 1.5;">
+                    Esta acción cancelará la salida y devolverá el equipo a estado <strong>"En Revisión"</strong> manteniendo el mismo número de caso (#<?php echo $id; ?>).
+                </p>
+                
+                <form method="POST">
+                    <input type="hidden" name="action" value="reentry">
+                    
+                    <div class="form-group" style="margin-bottom: 1.5rem;">
+                        <label class="form-label">Motivo del Reingreso *</label>
+                        <textarea name="reentry_reason" class="form-control" rows="3" required placeholder="Explique por qué regresa el equipo (falla persistente, cliente insatisfecho, etc.)"></textarea>
+                    </div>
+
+                    <div style="display: flex; justify-content: flex-end; gap: 1rem;">
+                        <button type="button" onclick="closeReentryModal()" class="btn" style="background: transparent; border: 1px solid var(--border-color); color: var(--text-secondary);">
+                            Cancelar
+                        </button>
+                        <button type="submit" class="btn" style="background: var(--warning); color: #000; border: none; font-weight: 600;">
+                            Confirmar Reingreso
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <script>
+            function openReentryModal() {
+                const modal = document.getElementById('reentryModal');
+                modal.style.display = 'flex';
+                // Focus textarea
+                setTimeout(() => modal.querySelector('textarea').focus(), 100);
+            }
+
+            function closeReentryModal() {
+                document.getElementById('reentryModal').style.display = 'none';
+            }
+            
+            // Close on click outside
+            document.getElementById('reentryModal').addEventListener('click', function(e) {
+                if(e.target === this) closeReentryModal();
+            });
+        </script>
 
         <form method="POST">
             <h3 class="mb-4">Datos de Quien Recibe</h3>

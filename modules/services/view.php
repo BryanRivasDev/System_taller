@@ -15,9 +15,10 @@ if (!$id) {
     die("ID no especificado.");
 }
 
-// Handle Status Updates
-$success_msg = '';
+// Handle Success/Print Messages from Redirect
+$success_msg = isset($_GET['msg']) && $_GET['msg'] === 'success' ? "Estado actualizado correctamente." : '';
 $error_msg = '';
+$autoPrintDiagnosis = isset($_GET['print']) && $_GET['print'] == '1'; 
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     if ($_POST['action'] === 'update_status') {
@@ -25,8 +26,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $note = clean($_POST['note']);
         
         try {
+            // Handle Diagnosis Fields if Status is Diagnosing
+            if ($new_status === 'diagnosing') {
+                $proc = clean($_POST['diagnosis_procedure'] ?? '');
+                $conc = clean($_POST['diagnosis_conclusion'] ?? '');
+                
+                // Update fields
+                $stmtUpd = $pdo->prepare("UPDATE service_orders SET diagnosis_procedure = ?, diagnosis_conclusion = ? WHERE id = ?");
+                $stmtUpd->execute([$proc, $conc, $id]);
+                
+                // Handle Images
+                if (isset($_FILES['diagnosis_images']) && !empty($_FILES['diagnosis_images']['name'][0])) {
+                    $uploadDir = '../../uploads/diagnosis/';
+                    if (!is_dir($uploadDir)) mkdir($uploadDir, 0777, true);
+                    
+                    foreach ($_FILES['diagnosis_images']['tmp_name'] as $key => $tmp_name) {
+                        if ($_FILES['diagnosis_images']['error'][$key] === 0) {
+                            $fileName = time() . '_' . $key . '_' . basename($_FILES['diagnosis_images']['name'][$key]);
+                            $targetPath = $uploadDir . $fileName;
+                            if (move_uploaded_file($tmp_name, $targetPath)) {
+                                $stmtImg = $pdo->prepare("INSERT INTO diagnosis_images (service_order_id, image_path) VALUES (?, ?)");
+                                $stmtImg->execute([$id, 'uploads/diagnosis/' . $fileName]);
+                            }
+                        }
+                    }
+                }
+                
+                // Set flag to auto-print after save
+                $autoPrintDiagnosis = true;
+            }
+
             update_service_status($pdo, $id, $new_status, $note, $_SESSION['user_id']);
-            $success_msg = "Estado actualizado correctamente.";
+            
+            // Redirect to prevent form resubmission
+            $redirectUrl = "view.php?id=$id&msg=success";
+            if ($autoPrintDiagnosis) $redirectUrl .= "&print=1";
+            
+            header("Location: $redirectUrl");
+            exit;
         } catch (Exception $e) {
             $error_msg = "Error al actualizar: " . $e->getMessage();
         }
@@ -69,9 +106,9 @@ require_once '../../includes/sidebar.php';
 // Status Mapping
 $statusLabels = [
     'received' => 'Recibido',
-    'diagnosing' => 'En Revisión',
+    'diagnosing' => 'En Revisión/Diagnóstico',
     'pending_approval' => 'En Espera',
-    'in_repair' => 'En Proceso',
+    'in_repair' => 'En Reparación',
     'ready' => 'Listo',
     'delivered' => 'Entregado',
     'cancelled' => 'Cancelado'
@@ -168,10 +205,7 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                 line-height: 1.6;
             }
 
-            /* Right Column Form */
             .update-card {
-                position: sticky;
-                top: 2rem;
                 background: var(--p-bg-card);
                 border: 1px solid var(--p-border);
                 border-radius: 16px;
@@ -256,9 +290,10 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                 </div>
                 
                 <div style="text-align: right;">
-                    <a href="../equipment/print_entry.php?id=<?php echo $id; ?>" target="_blank" class="btn btn-primary" style="margin-bottom: 0.5rem; text-decoration: none; display: inline-flex;">
+                    <a href="../equipment/print_entry.php?id=<?php echo $id; ?>" class="btn btn-primary" style="margin-bottom: 0.5rem; text-decoration: none; display: inline-flex;">
                         <i class="ph ph-printer"></i> Imprimir Hoja Entrada
                     </a>
+
                     <?php if($order['invoice_number']): ?>
                         <div>
                             <span style="color: var(--p-text-muted); font-size: 0.9rem;">Factura:</span>
@@ -439,12 +474,12 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                         <?php if($order['status'] !== 'delivered'): ?>
                             <div class="update-card" style="margin-bottom: 1.5rem; border-top: 4px solid var(--p-primary);">
                                 <h3 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.1rem; color: var(--p-text-main);">Actualizar Estado</h3>
-                                <form method="POST">
+                                <form method="POST" enctype="multipart/form-data">
                                     <input type="hidden" name="action" value="update_status">
                                     
                                     <div style="margin-bottom: 1rem;">
                                         <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nuevo Estado</label>
-                                        <select name="status" class="modern-select">
+                                        <select name="status" id="statusSelect" class="modern-select">
                                             <?php foreach($statusLabels as $key => $label): ?>
                                                 <?php if($key !== 'delivered' && $key !== 'cancelled'): ?>
                                                     <option value="<?php echo $key; ?>" <?php echo $order['status'] === $key ? 'selected' : ''; ?>>
@@ -455,16 +490,169 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                         </select>
                                     </div>
 
+                                    <!-- Spare Parts Selector (Hidden by default) -->
+                                    <!-- Spare Parts Selector (Hidden by default) -->
+                                    <div id="sparePartsContainer" style="display: none; margin-bottom: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
+                                        <label style="display: block; font-size: 0.8rem; color: var(--p-text-muted); margin-bottom: 0.5rem; font-weight: 600;">🛠️ Repuestos / Acciones</label>
+                                        <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                            <select id="partSelect" class="modern-select" style="font-size: 0.85rem; flex: 1.5;">
+                                                <option value="">-- Seleccionar Repuesto --</option>
+                                                <option value="Pantalla">Pantalla</option>
+                                                <option value="Batería">Batería</option>
+                                                <option value="Teclado">Teclado</option>
+                                                <option value="Disco SSD">Disco SSD</option>
+                                                <option value="Memoria RAM">Memoria RAM</option>
+                                                <option value="Centro de Carga">Centro de Carga</option>
+                                                <option value="Fuente de Poder">Fuente de Poder</option>
+                                                <option value="Cargador">Cargador</option>
+                                                <option value="Mantenimiento General">Mantenimiento General</option>
+                                                <option value="Limpieza Interna">Limpieza Interna</option>
+                                                <option value="Instalación Windows">Instalación Windows</option>
+                                            </select>
+                                            <input type="text" id="partSN" placeholder="S/N" class="modern-input" style="flex: 1; font-size: 0.85rem; padding: 0.5rem;">
+                                            <button type="button" id="btnAddPart" style="background: var(--p-border); color: white; border: none; padding: 0 0.75rem; border-radius: 6px; cursor: pointer; font-size: 1.2rem; height: 38px;">+</button>
+                                        </div>
+                                    </div>
+
                                     <div style="margin-bottom: 1rem;">
                                         <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nota de Progreso</label>
-                                        <textarea name="note" class="modern-textarea" rows="3" placeholder="Ej. Se realizó cambio de repuesto..." required></textarea>
+                                        <textarea name="note" id="progressNote" class="modern-textarea" rows="3" placeholder="Ej. Se realizó cambio de repuesto..." required></textarea>
                                     </div>
 
                                     <button type="submit" class="btn-update">
                                         Guardar Cambios
                                     </button>
+
+                                    <!-- Diagnosis Modal (Inside Form) -->
+                                    <div id="diagnosisModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+                                        <div style="background: var(--p-bg-card); padding: 2rem; border-radius: 16px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--p-border);">
+                                            <h2 style="margin-top: 0; color: var(--p-primary); margin-bottom: 1.5rem;">Reporte de Diagnóstico</h2>
+                                            
+                                            <!-- Readonly Info -->
+                                            <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">
+                                                    <span style="font-weight: bold; color: var(--p-primary);">Caso #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></span>
+                                                    <?php if($order['diagnosis_number']): ?>
+                                                        <span style="color: #fbbf24;">Diag #<?php echo str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT); ?></span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div style="font-weight: bold; margin-bottom: 0.25rem;"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                                                <div style="font-size: 0.85rem; color: var(--p-text-muted);">
+                                                    <?php echo htmlspecialchars($order['brand'] . ' ' . $order['model']); ?>
+                                                </div>
+                                                <div style="margin-top: 0.5rem; font-size: 0.9rem;">
+                                                    <span style="color: var(--p-text-muted);">Falla:</span> 
+                                                    <?php echo htmlspecialchars($order['problem_reported']); ?>
+                                                </div>
+                                            </div>
+
+                                            <div style="margin-bottom: 1rem;">
+                                                <label style="display: block; margin-bottom: 0.5rem; color: var(--p-text-muted); font-size: 0.85rem;">Procedimiento</label>
+                                                <textarea name="diagnosis_procedure" id="diag_procedure" class="modern-textarea" rows="4" placeholder="Describe las pruebas realizadas..."></textarea>
+                                            </div>
+
+                                            <div style="margin-bottom: 1rem;">
+                                                <label style="display: block; margin-bottom: 0.5rem; color: var(--p-text-muted); font-size: 0.85rem;">Conclusión / Solución</label>
+                                                <textarea name="diagnosis_conclusion" id="diag_conclusion" class="modern-textarea" rows="4" placeholder="Conclusión técnica..."></textarea>
+                                            </div>
+                                            
+                                            <div style="margin-bottom: 1.5rem;">
+                                                <label style="display: block; margin-bottom: 0.5rem; color: var(--p-text-muted); font-size: 0.85rem;">Evidencia (Imágenes)</label>
+                                                <input type="file" name="diagnosis_images[]" multiple accept="image/*" class="modern-input">
+                                            </div>
+
+                                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                                <button type="button" id="btnCancelDiag" class="btn btn-secondary" style="background: transparent; border: 1px solid var(--p-border); color: var(--p-text-main);">Cancelar</button>
+                                                <button type="button" id="btnConfirmDiag" class="btn btn-primary">Guardar Diagnóstico</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                 </form>
                             </div>
+                            
+                            <script>
+                                (function() {
+                                    var statusSelect = document.getElementById('statusSelect');
+                                    var container = document.getElementById('sparePartsContainer');
+                                    var btn = document.getElementById('btnAddPart');
+                                    var partSelect = document.getElementById('partSelect');
+                                    var progressNote = document.getElementById('progressNote');
+
+                                    function toggleParts() {
+                                        if (!statusSelect || !container) return;
+                                        if (statusSelect.value === 'in_repair') {
+                                            container.style.display = 'block';
+                                        } else {
+                                            container.style.display = 'none';
+                                        }
+                                    }
+
+                                    if (statusSelect) {
+                                        statusSelect.addEventListener('change', toggleParts);
+                                        // Run immediately
+                                        toggleParts();
+                                    }
+
+                                    // Modal Logic
+                                    var modal = document.getElementById('diagnosisModal');
+                                    var btnConfirm = document.getElementById('btnConfirmDiag');
+                                    var btnCancel = document.getElementById('btnCancelDiag');
+                                    var previousStatus = statusSelect ? statusSelect.value : '';
+                                    var form = statusSelect ? statusSelect.closest('form') : null;
+
+                                    if(statusSelect && modal) {
+                                        statusSelect.addEventListener('focus', function() {
+                                            previousStatus = this.value;
+                                        });
+
+                                        statusSelect.addEventListener('change', function() {
+                                            if (this.value === 'diagnosing') {
+                                                modal.style.display = 'flex';
+                                            } else {
+                                                modal.style.display = 'none';
+                                            }
+                                        });
+                                        
+                                        btnCancel.addEventListener('click', function() {
+                                            modal.style.display = 'none';
+                                            statusSelect.value = previousStatus;
+                                            if(window.toggleParts) window.toggleParts(); // Re-check visibility
+                                        });
+                                        
+                                        btnConfirm.addEventListener('click', function() {
+                                            // Optional: Validation
+                                            form.submit();
+                                        });
+                                    }
+
+                                    if (btn && partSelect && progressNote) {
+                                        var partSN = document.getElementById('partSN');
+                                        btn.addEventListener('click', function() {
+                                            var val = partSelect.value;
+                                            var sn = partSN ? partSN.value.trim() : "";
+                                            if(val) {
+                                                var entry = "Se requiere/utiliza: " + val;
+                                                if(sn) entry += " (S/N: " + sn + ")";
+                                                
+                                                progressNote.value = (progressNote.value ? progressNote.value + "\n" : "") + entry;
+                                                
+                                                // Reset inputs
+                                                partSelect.value = "";
+                                                if(partSN) partSN.value = "";
+                                            }
+                                        });
+                                    }
+                                })();
+                            </script>
+                            
+                            <?php if($autoPrintDiagnosis): ?>
+                                <script>
+                                    document.addEventListener("DOMContentLoaded", function() {
+                                        window.location.href = 'print_diagnosis.php?id=<?php echo $id; ?>';
+                                    });
+                                </script>
+                            <?php endif; ?>
                         <?php else: ?>
                             <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem;">
                                 <i class="ph ph-check-circle" style="font-size: 1.5rem; color: #34d399;"></i>
