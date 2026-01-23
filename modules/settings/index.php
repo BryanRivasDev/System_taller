@@ -29,6 +29,7 @@ $defined_modules = [
     'new_warranty' => 'Registrar Nueva Garantía',
     'history'   => 'Ver Historial',
     'users'     => 'Gestión de Usuarios',
+    'users_delete' => 'Eliminar Usuarios',
     'reports'   => 'Ver Reportes',
     'settings'  => 'Configuración del Sistema'
 ];
@@ -61,6 +62,16 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS site_settings (
     id INT AUTO_INCREMENT PRIMARY KEY,
     setting_key VARCHAR(50) UNIQUE NOT NULL,
     setting_value TEXT
+)");
+
+// Ensure user_custom_modules table exists for per-user overrides
+$pdo->exec("CREATE TABLE IF NOT EXISTS user_custom_modules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    module_name VARCHAR(50) NOT NULL,
+    is_enabled TINYINT(1) DEFAULT 1,
+    UNIQUE KEY unique_user_module (user_id, module_name),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 )");
 // ---------------------------------------------------------
 
@@ -143,58 +154,140 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 
-    // --- UPDATE PERMISSIONS ---
+
+    // --- UPDATE PERMISSIONS (ROLES) ---
+    // --- UPDATE PERMISSIONS (ROLES - SINGLE or ALL) ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_permissions') {
         $active_tab = 'modules';
         try {
             $pdo->beginTransaction();
             
-            // Clear existing module permissions for NON-ADMIN roles (ID != 1) to avoid locking admin out via UI
-            // We'll iterate through roles > 1
-            $stmtRoles = $pdo->query("SELECT id FROM roles WHERE id > 1"); // Skip Admin
-            $roles = $stmtRoles->fetchAll();
+            // Determine Target Role
+            // If role_id is passed, updating single role.
+            $target_r_id = isset($_POST['role_id']) ? intval($_POST['role_id']) : 0;
             
-            // Get all module permission IDs
-            $module_codes = array_map(function($k) { return 'module_'.$k; }, array_keys($defined_modules));
-            $in_query = implode(',', array_fill(0, count($module_codes), '?'));
-            $stmtPIDs = $pdo->prepare("SELECT id FROM permissions WHERE code IN ($in_query)");
-            $stmtPIDs->execute($module_codes);
-            $p_ids = $stmtPIDs->fetchAll(PDO::FETCH_COLUMN);
-            
-            if ($p_ids) {
-                $p_ids_str = implode(',', $p_ids);
-                foreach ($roles as $r) {
-                    $pdo->exec("DELETE FROM role_permissions WHERE role_id = {$r['id']} AND permission_id IN ($p_ids_str)");
-                }
-            }
-
-            // Insert new permissions
-            if (isset($_POST['perms'])) {
-                foreach ($_POST['perms'] as $r_id => $p_list) {
-                    if ($r_id == 1) continue; // Skip Admin
-                    
-                    foreach ($p_list as $p_code) {
-                        // Find ID
-                        $stmtFind = $pdo->prepare("SELECT id FROM permissions WHERE code = ?");
-                        $stmtFind->execute([$p_code]);
-                        $pid = $stmtFind->fetchColumn();
-                        
-                        if ($pid) {
-                            $stmtIns = $pdo->prepare("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)");
-                            $stmtIns->execute([$r_id, $pid]);
+            // If target_r_id provided, we update ONLY that role
+            if ($target_r_id > 1) { // Never update Admin (1)
+                
+                // 1. Clear existing permissions for this role
+                $pdo->prepare("DELETE FROM role_permissions WHERE role_id = ?")->execute([$target_r_id]);
+                
+                // 2. Insert new
+                if (isset($_POST['perms'])) {
+                    foreach ($_POST['perms'] as $p_code => $val) {
+                        if ($val == '1') { // If allowed
+                            // Find ID
+                            $stmtFind = $pdo->prepare("SELECT id FROM permissions WHERE code = ?");
+                            $stmtFind->execute([$p_code]);
+                            $pid = $stmtFind->fetchColumn();
+                            
+                            if ($pid) {
+                                $stmtIns = $pdo->prepare("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)");
+                                $stmtIns->execute([$target_r_id, $pid]);
+                            }
                         }
                     }
                 }
+                
+                $success_msg = "Permisos del rol actualizados correctamente.";
+                $url_params = "&subtab=roles&target_role_id=$target_r_id";
+                
+            } else {
+                // Fallback implementation for "All Roles" (Legacy support if needed, but we are moving to single role editing)
+                // For safety, if no role_id, we do nothing or throw error in this new design.
+                // But to be safe, let's just warn or do nothing, or keep old logic?
+                // Given the redesign, we should always have a role_id.
+                $error_msg = "No se especificó un rol válido para actualizar.";
+                $url_params = "&subtab=roles";
             }
 
             $pdo->commit();
-            $success_msg = "Permisos actualizados correctamente.";
+            if(!isset($error_msg)) {
+                header("Location: ?tab=modules$url_params&success=1");
+                exit;
+            }
             
         } catch (Exception $e) {
             $pdo->rollBack();
             $error_msg = "Error al actualizar permisos: " . $e->getMessage();
         }
     }
+
+    // --- UPDATE USER SPECIFIC PERMISSIONS ---
+    if (isset($_POST['action']) && $_POST['action'] === 'update_user_permissions') {
+        $active_tab = 'modules';
+        $subtab = 'users'; // Stay on users tab
+        $target_user_id = intval($_POST['user_id']);
+        
+        try {
+            $pdo->beginTransaction();
+            
+            if (isset($_POST['perms'])) {
+                foreach ($_POST['perms'] as $module => $val) {
+                    // $val can be '1' (allow), '0' (deny), or 'inherit'
+                    if ($val === 'inherit') {
+                        // Remove override
+                        $stmt = $pdo->prepare("DELETE FROM user_custom_modules WHERE user_id = ? AND module_name = ?");
+                        $stmt->execute([$target_user_id, $module]);
+                    } else {
+                        // Upsert Override
+                        $isEnabled = intval($val);
+                        $stmt = $pdo->prepare("
+                            INSERT INTO user_custom_modules (user_id, module_name, is_enabled) 
+                            VALUES (?, ?, ?) 
+                            ON DUPLICATE KEY UPDATE is_enabled = ?
+                        ");
+                        $stmt->execute([$target_user_id, $module, $isEnabled, $isEnabled]);
+                    }
+                }
+            }
+            
+            $pdo->commit();
+            $success_msg = "Excepciones de usuario actualizadas correctamente.";
+            // ensure URL keeps params
+            header("Location: ?tab=modules&subtab=users&target_user_id=$target_user_id&success=1");
+            exit;
+            
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error_msg = "Error al guardar excepciones: " . $e->getMessage();
+        }
+    }
+
+    // --- DELETE USER ---
+    if (isset($_POST['action']) && $_POST['action'] === 'delete_user') {
+        $active_tab = 'users';
+        $user_id_to_delete = intval($_POST['user_id']);
+
+        // Check permission
+        if (!can_access_module('users_delete', $pdo)) {
+             $error_msg = "No tienes permiso para eliminar usuarios.";
+        } elseif ($user_id_to_delete == 1) {
+             $error_msg = "No se puede eliminar al SuperAdmin.";
+        } elseif ($user_id_to_delete == $_SESSION['user_id']) {
+             $error_msg = "No puedes eliminar tu propia cuenta.";
+        } else {
+             try {
+                // Check if user exists
+                $stmtChk = $pdo->prepare("SELECT id FROM users WHERE id = ?");
+                $stmtChk->execute([$user_id_to_delete]);
+                if ($stmtChk->fetch()) {
+                    $stmtDel = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                    if ($stmtDel->execute([$user_id_to_delete])) {
+                        $success_msg = "Usuario eliminado correctamente.";
+                    } else {
+                        $error_msg = "Error al eliminar el usuario.";
+                    }
+                } else {
+                     $error_msg = "El usuario no existe.";
+                }
+             } catch (PDOException $e) {
+                 $error_msg = "Error de base de datos: " . $e->getMessage();
+             }
+        }
+    }
+
+
 
     // --- SYSTEM RESTORE ---
     if (isset($_POST['action']) && $_POST['action'] === 'system_restore') {
@@ -403,57 +496,527 @@ require_once '../../includes/sidebar.php';
                 </button>
             </form>
     </div>
+
+    <!-- Roles Summary Table -->
+    <div class="card">
+        <h3 class="mb-4">Resumen de Roles</h3>
+        
+        <?php
+            // Fetch Roles with Counts
+            $stmtRolesSummary = $pdo->query("
+                SELECT 
+                    r.id, 
+                    r.name, 
+                    (SELECT COUNT(*) FROM users u WHERE u.role_id = r.id AND u.status = 'active') as user_count,
+                    (SELECT COUNT(*) FROM role_permissions rp JOIN permissions p ON rp.permission_id = p.id WHERE rp.role_id = r.id AND p.code LIKE 'module_%') as module_count
+                FROM roles r
+                ORDER BY r.id ASC
+            ");
+            $roles_summary = $stmtRolesSummary->fetchAll();
+        ?>
+        
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Rol</th>
+                    <th style="text-align: center;">Usuarios Asignados</th>
+                    <th style="text-align: center;">Módulos Activos</th>
+                    <th style="width: 50px;"></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach($roles_summary as $rs): ?>
+                    <?php 
+                        $is_super_role = ($rs['id'] == 1);
+                        $row_style = $is_super_role ? "opacity: 0.7; cursor: not-allowed; background: rgba(0,0,0,0.02);" : "cursor: pointer; transition: background 0.2s;";
+                        $onclick = $is_super_role ? "" : "window.location.href='?tab=modules&subtab=roles&target_role_id={$rs['id']}'";
+                    ?>
+                    <tr onclick="<?php echo $onclick; ?>" style="<?php echo $row_style; ?>" class="<?php echo $is_super_role ? '' : 'hover-row'; ?>">
+                        <td style="font-weight: 500; font-size: 0.95rem;">
+                            <?php if($is_super_role): ?>
+                                <i class="ph-fill ph-lock-key" style="color: var(--warning); margin-right: 0.5rem;"></i>
+                            <?php else: ?>
+                                <i class="ph ph-shield" style="color: var(--text-muted); margin-right: 0.5rem;"></i>
+                            <?php endif; ?>
+                            <?php echo htmlspecialchars($rs['name']); ?>
+                        </td>
+                        <td style="text-align: center;">
+                            <span class="badge" style="background: var(--bg-hover); color: var(--text-main);">
+                                <i class="ph-bold ph-users" style="font-size: 0.8rem; margin-right: 4px;"></i>
+                                <?php echo $rs['user_count']; ?>
+                            </span>
+                        </td>
+                        <td style="text-align: center;">
+                            <span class="badge" style="background: rgba(var(--success-rgb), 0.1); color: var(--success);">
+                                <?php echo $rs['id'] == 1 ? 'Todos' : $rs['module_count']; ?>
+                            </span>
+                        </td>
+                        <td style="color: var(--text-muted);">
+                            <?php if(!$is_super_role): ?>
+                                <i class="ph ph-caret-right"></i>
+                            <?php endif; ?>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+            </tbody>
+        </table>
+    </div>
 </div>
+
 
 <!-- TAB: MODULES -->
 <div id="tab-modules" style="display: <?php echo $active_tab == 'modules' ? 'block' : 'none'; ?>;">
-    <div class="card">
-            <h3 class="mb-4">Matriz de Acceso a Módulos</h3>
-            <p class="text-muted mb-4">Seleccione qué módulos puede ver cada rol. El Administrador siempre tiene acceso total.</p>
-            
-            <form method="POST">
-                <input type="hidden" name="action" value="update_permissions">
-                
-                <div style="overflow-x: auto;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <thead>
-                            <tr style="border-bottom: 1px solid var(--border-color);">
-                                <th style="text-align: left; padding: 1rem;">Módulo</th>
-                                <?php foreach ($users_roles_edit as $role): ?>
-                                    <th style="text-align: center; padding: 1rem; color: var(--text-secondary);"><?php echo htmlspecialchars($role['name']); ?></th>
-                                <?php endforeach; ?>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($defined_modules as $mod_key => $mod_desc): ?>
-                            <?php $p_code = 'module_' . $mod_key; ?>
-                            <tr style="border-bottom: 1px solid var(--border-color);">
-                                <td style="padding: 1rem;">
-                                    <strong><?php echo htmlspecialchars($mod_desc); ?></strong>
-                                </td>
-                                <?php foreach ($users_roles_edit as $role): ?>
-                                    <td style="text-align: center; padding: 1rem;">
-                                        <label class="custom-checkbox">
-                                            <input type="checkbox" name="perms[<?php echo $role['id']; ?>][]" value="<?php echo $p_code; ?>"
-                                                <?php echo isset($current_perms[$role['id']][$p_code]) ? 'checked' : ''; ?>>
-                                            <span class="checkmark"></span>
-                                        </label>
-                                    </td>
-                                <?php endforeach; ?>
-                            </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div style="margin-top: 2rem; text-align: right;">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="ph ph-floppy-disk"></i> Guardar Cambios de Permisos
-                    </button>
-                </div>
-            </form>
+    
+    <?php
+    $subtab = isset($_GET['subtab']) ? $_GET['subtab'] : 'roles';
+    ?>
+
+    <!-- Sub-Tabs Navigation & Toolbar -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; border-bottom: 1px solid var(--border-color); padding-bottom: 1rem;">
+        <!-- Pills -->
+        <div style="display: flex; gap: 0.25rem; background: var(--bg-hover); padding: 0.35rem; border-radius: 8px;">
+            <a href="?tab=modules&subtab=roles" class="btn btn-sm <?php echo $subtab === 'roles' ? 'btn-primary' : 'btn-text'; ?>" style="<?php echo $subtab !== 'roles' ? 'color: var(--text-secondary);' : ''; ?>">
+                <i class="ph ph-identification-badge"></i> Por Roles (General)
+            </a>
+            <a href="?tab=modules&subtab=users" class="btn btn-sm <?php echo $subtab === 'users' ? 'btn-primary' : 'btn-text'; ?>" style="<?php echo $subtab !== 'users' ? 'color: var(--text-secondary);' : ''; ?>">
+                <i class="ph ph-user-gear"></i> Por Usuario (Excepciones)
+            </a>
+        </div>
+
+        <!-- Right Toolbar (Context) -->
+        <div id="modules-toolbar">
+            <?php if ($subtab === 'users' && isset($_GET['target_user_id'])): ?>
+                <?php 
+                    $t_uid = intval($_GET['target_user_id']);
+                    $stmtH = $pdo->prepare("SELECT username, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?");
+                    $stmtH->execute([$t_uid]);
+                    $hUser = $stmtH->fetch();
+                ?>
+                <?php if($hUser): ?>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <span style="font-size: 0.9rem; color: var(--text-muted);">
+                            Editando excepciones de: <strong style="color: var(--text-main); font-weight: 600;"><?php echo htmlspecialchars($hUser['username']); ?></strong>
+                        </span>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span class="badge" style="background: var(--bg-card); border: 1px solid var(--border-color); color: var(--text-secondary);">
+                                <i class="ph-fill ph-shield-star" style="margin-right: 4px; color: var(--primary);"></i>
+                                <?php echo htmlspecialchars($hUser['role_name']); ?>
+                            </span>
+                            <a href="?tab=modules&subtab=users" class="btn btn-sm btn-icon btn-text" title="Cerrar y volver a lista" style="color: var(--text-muted);">
+                                <i class="ph ph-x"></i>
+                            </a>
+                        </div>
+                    </div>
+                <?php endif; ?>
+            <?php endif; ?>
         </div>
     </div>
+
+    <!-- SUB-TAB: ROLES (The Grid -> Cards) -->
+    <?php if ($subtab === 'roles'): ?>
+    <?php
+        // Prepare Data for Roles View
+        $target_role_id = isset($_GET['target_role_id']) ? intval($_GET['target_role_id']) : 0;
+        
+        // Default to first editable role if not selected
+        if ($target_role_id === 0 && count($users_roles_edit) > 0) {
+            $target_role_id = $users_roles_edit[array_key_first($users_roles_edit)]['id'];
+        }
+        
+        // Define Modules Layout (Reused)
+        $modules_config = [
+            'dashboard' => ['label' => 'Dashboard', 'cat' => 'Sistema', 'icon' => 'ph-squares-four'],
+            'history'   => ['label' => 'Historial', 'cat' => 'Sistema', 'icon' => 'ph-clock-counter-clockwise'],
+            
+            'clients'   => ['label' => 'Clientes', 'cat' => 'Gestión', 'icon' => 'ph-users'],
+            'equipment' => ['label' => 'Equipos', 'cat' => 'Gestión', 'icon' => 'ph-desktop'],
+            'tools'     => ['label' => 'Herramientas', 'cat' => 'Gestión', 'icon' => 'ph-wrench'],
+            'services'  => ['label' => 'Servicios', 'cat' => 'Gestión', 'icon' => 'ph-briefcase'],
+            'warranties'=> ['label' => 'Garantías', 'cat' => 'Gestión', 'icon' => 'ph-shield-check'],
+            'new_warranty' => ['label' => 'Nueva Garantía', 'cat' => 'Gestión', 'icon' => 'ph-plus-circle'],
+            
+            'users'     => ['label' => 'Usuarios', 'cat' => 'Administración', 'icon' => 'ph-user-gear'],
+            'users_delete' => ['label' => 'Eliminar Usuarios', 'cat' => 'Administración', 'icon' => 'ph-trash'],
+            'reports'   => ['label' => 'Reportes', 'cat' => 'Administración', 'icon' => 'ph-chart-bar'],
+            'settings'  => ['label' => 'Configuración', 'cat' => 'Administración', 'icon' => 'ph-gear']
+        ];
+
+        // Group by Category
+        $grouped_modules = [];
+        foreach ($modules_config as $key => $info) {
+            if (isset($defined_modules[$key])) {
+                $grouped_modules[$info['cat']][$key] = $info;
+            }
+        }
+    ?>
+    <div class="card" style="max-width: 100%;">
+        <div style="margin-bottom: 2rem;">
+            <h3 class="mb-2">Matriz de Acceso a Módulos</h3>
+            <p class="text-muted">Seleccione un rol y defina sus permisos globales. Estos permisos aplican a todos los usuarios con este rol, a menos que tengan excepciones.</p>
+            
+            <!-- ROLE SELECTOR -->
+            <div style="margin-top: 1.5rem; max-width: 400px;">
+                <label class="form-label">Seleccionar Rol</label>
+                <div style="display: flex; gap: 0.5rem;">
+                    <select class="form-control" onchange="window.location.href='?tab=modules&subtab=roles&target_role_id='+this.value">
+                        <?php foreach($users_roles_edit as $r): ?>
+                            <option value="<?php echo $r['id']; ?>" <?php echo $target_role_id == $r['id'] ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($r['name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <form method="POST">
+            <input type="hidden" name="action" value="update_permissions">
+            <input type="hidden" name="role_id" value="<?php echo $target_role_id; ?>">
+            
+            <div class="permissions-container">
+                <?php foreach ($grouped_modules as $category => $modules): ?>
+                    <div class="category-section">
+                        <h4 class="category-title"><?php echo htmlspecialchars($category); ?></h4>
+                        <div class="modules-grid">
+                            <?php foreach ($modules as $mod_key => $mod_info): ?>
+                                <?php 
+                                    $p_code = 'module_' . $mod_key;
+                                    $has_perm = isset($current_perms[$target_role_id][$p_code]);
+                                ?>
+                                <div class="module-card <?php echo $has_perm ? 'allow' : ''; ?>">
+                                    <div class="module-header" style="justify-content: space-between;">
+                                        <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                            <div class="module-icon">
+                                                <i class="ph <?php echo $mod_info['icon']; ?>"></i>
+                                            </div>
+                                            <div class="module-name">
+                                                <?php echo htmlspecialchars($mod_info['label']); ?>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Role Toggles (Binary) -->
+                                    <div class="segmented-control">
+                                        <label class="segment <?php echo $has_perm ? 'active' : ''; ?>">
+                                            <input type="radio" name="perms[<?php echo $p_code; ?>]" value="1" <?php echo $has_perm ? 'checked' : ''; ?>>
+                                            <span>Permitir</span>
+                                        </label>
+                                        <label class="segment <?php echo !$has_perm ? 'active' : ''; ?>">
+                                            <input type="radio" name="perms[<?php echo $p_code; ?>]" value="0" <?php echo !$has_perm ? 'checked' : ''; ?>>
+                                            <span>Denegar</span>
+                                        </label>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; border-top: 1px solid var(--border-color); z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                <button type="submit" class="btn btn-primary" style="min-width: 200px;">
+                    <i class="ph ph-floppy-disk"></i> Guardar Permisos del Rol
+                </button>
+            </div>
+        </form>
+    </div>
+    
+    <!-- SUB-TAB: USER EXCEPTIONS -->
+    <?php elseif ($subtab === 'users'): ?>
+        <?php
+        $target_user_id = isset($_GET['target_user_id']) ? intval($_GET['target_user_id']) : 0;
+        
+        // Define Modules Layout (Reused)
+        $modules_config = [
+            'dashboard' => ['label' => 'Dashboard', 'cat' => 'Sistema', 'icon' => 'ph-squares-four'],
+            'history'   => ['label' => 'Historial', 'cat' => 'Sistema', 'icon' => 'ph-clock-counter-clockwise'],
+            
+            'clients'   => ['label' => 'Clientes', 'cat' => 'Gestión', 'icon' => 'ph-users'],
+            'equipment' => ['label' => 'Equipos', 'cat' => 'Gestión', 'icon' => 'ph-desktop'],
+            'tools'     => ['label' => 'Herramientas', 'cat' => 'Gestión', 'icon' => 'ph-wrench'],
+            'services'  => ['label' => 'Servicios', 'cat' => 'Gestión', 'icon' => 'ph-briefcase'],
+            'warranties'=> ['label' => 'Garantías', 'cat' => 'Gestión', 'icon' => 'ph-shield-check'],
+            'new_warranty' => ['label' => 'Nueva Garantía', 'cat' => 'Gestión', 'icon' => 'ph-plus-circle'],
+            
+            'users'     => ['label' => 'Usuarios', 'cat' => 'Administración', 'icon' => 'ph-user-gear'],
+            'reports'   => ['label' => 'Reportes', 'cat' => 'Administración', 'icon' => 'ph-chart-bar'],
+            'settings'  => ['label' => 'Configuración', 'cat' => 'Administración', 'icon' => 'ph-gear']
+        ];
+        
+        // Group by Category (Reused Logic)
+        $grouped_modules = [];
+        foreach ($modules_config as $key => $info) {
+            if (isset($defined_modules[$key])) {
+                $grouped_modules[$info['cat']][$key] = $info;
+            }
+        }
+        ?>
+
+        <!-- VIEW STATE: TABLE (NO SELECTION) -->
+        <?php if (!$target_user_id): ?>
+            <?php 
+                // Fetch Users with Role Names and Module Counts
+                $stmtAllUsers = $pdo->query("
+                    SELECT 
+                        u.id, u.username, u.email, u.status, u.role_id, 
+                        r.name as role_name,
+                        (SELECT COUNT(*) FROM role_permissions rp JOIN permissions p ON rp.permission_id = p.id WHERE rp.role_id = u.role_id AND p.code LIKE 'module_%') as role_module_count
+                    FROM users u 
+                    JOIN roles r ON u.role_id = r.id 
+                    WHERE u.status = 'active'
+                    ORDER BY u.role_id ASC, u.username ASC
+                ");
+                $all_users = $stmtAllUsers->fetchAll();
+            ?>
+            <div class="card">
+                <div style="margin-bottom: 2rem;">
+                    <h3 class="mb-2">Usuarios del Sistema</h3>
+                    <p class="text-muted">Seleccione un usuario de la lista para gestionar sus permisos específicos.</p>
+                </div>
+                
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th style="width: 50px;"></th>
+                            <th>Usuario</th>
+                            <th>Rol</th>
+                            <th style="text-align: center;">Módulos</th>
+                            <th>Estado</th>
+                            <th style="width: 50px;"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach($all_users as $u): ?>
+                            <?php 
+                                $is_super = ($u['id'] == 1);
+                                $row_style = $is_super ? "opacity: 0.7; cursor: not-allowed; background: rgba(0,0,0,0.02);" : "cursor: pointer;";
+                                $onclick = $is_super ? "" : "window.location.href='?tab=modules&subtab=users&target_user_id={$u['id']}'";
+                            ?>
+                            <tr onclick="<?php echo $onclick; ?>" style="<?php echo $row_style; ?>">
+                                <td>
+                                    <div class="avatar" style="width: 32px; height: 32px; font-size: 0.9rem;">
+                                        <?php if($is_super): ?>
+                                            <i class="ph-fill ph-lock-key" style="color: var(--warning);"></i>
+                                        <?php else: ?>
+                                            <?php echo strtoupper(substr($u['username'], 0, 1)); ?>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
+                                <td>
+                                    <div style="font-weight: 500; color: var(--text-main);"><?php echo htmlspecialchars($u['username']); ?></div>
+                                    <div style="font-size: 0.8rem; color: var(--text-muted);"><?php echo htmlspecialchars($u['email']); ?></div>
+                                </td>
+                                <td>
+                                    <span class="badge"><?php echo htmlspecialchars($u['role_name']); ?></span>
+                                </td>
+                                <td style="text-align: center;">
+                                    <span class="badge" style="background: rgba(var(--primary-rgb), 0.1); color: var(--primary);">
+                                        <?php echo ($u['id'] == 1) ? 'Todos' : $u['role_module_count']; ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <?php if($u['status'] == 'active'): ?>
+                                        <span class="status-badge status-green">Activo</span>
+                                    <?php else: ?>
+                                        <span class="status-badge status-gray">Inactivo</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td style="color: var(--text-muted);">
+                                    <?php if(!$is_super): ?>
+                                        <i class="ph ph-caret-right"></i>
+                                    <?php endif; ?>
+                                </td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            </div>
+            
+        <!-- VIEW STATE: DETAIL (USER SELECTED) -->
+        <?php else: ?>
+            <?php
+            // Fetch Selected User Details
+            $stmtTU = $pdo->prepare("SELECT * FROM users WHERE id = ?");
+            $stmtTU->execute([$target_user_id]);
+            $target_user = $stmtTU->fetch();
+            
+            if ($target_user) {
+                // SECURITY: Prevent editing SuperAdmin (ID 1)
+                if ($target_user['id'] == 1) {
+                   echo '<div class="alert alert-danger">No se pueden modificar los permisos del SuperAdmin.</div>';
+                   $target_user = false; // Disable form render
+                } else {
+                    $target_role_id = $target_user['role_id'];
+                }
+            }
+            ?>
+            
+            <?php if ($target_user): ?>
+                <div class="card">
+                    <form method="POST">
+                        <input type="hidden" name="action" value="update_user_permissions">
+                        <input type="hidden" name="user_id" value="<?php echo $target_user_id; ?>">
+                        
+                        <div class="permissions-container">
+                            <?php foreach ($grouped_modules as $category => $modules): ?>
+                                <div class="category-section">
+                                    <h4 class="category-title"><?php echo htmlspecialchars($category); ?></h4>
+                                    <div class="modules-grid">
+                                        <?php foreach ($modules as $mod_key => $mod_info): ?>
+                                            <?php 
+                                                // Determine Role Access
+                                                $perm_code = 'module_' . $mod_key;
+                                                $stmtRolePerm = $pdo->prepare("
+                                                    SELECT COUNT(*) FROM role_permissions rp 
+                                                    JOIN permissions p ON rp.permission_id = p.id 
+                                                    WHERE rp.role_id = ? AND p.code = ?
+                                                ");
+                                                $stmtRolePerm->execute([$target_role_id, $perm_code]);
+                                                $role_has_access = $stmtRolePerm->fetchColumn() > 0;
+                                                
+                                                // Determine User Override
+                                                // Fetch strict value from DB
+                                                $stmtUserPerm = $pdo->prepare("SELECT is_enabled FROM user_custom_modules WHERE user_id = ? AND module_name = ?");
+                                                $stmtUserPerm->execute([$target_user_id, $mod_key]);
+                                                $override = $stmtUserPerm->fetchColumn(); 
+                                                // $override will be 1, 0, or false (null)
+                                                
+                                                // Current Selection State
+                                                // If override is present (1 or 0), use it. Else 'inherit'.
+                                                $current_val = 'inherit';
+                                                if ($override !== false) {
+                                                    $current_val = $override == 1 ? 'allow' : 'deny';
+                                                }
+                                            ?>
+                                            
+                                            <div class="module-card <?php echo $current_val === 'inherit' ? ($role_has_access ? 'inherit-allow' : 'inherit-deny') : $current_val; ?>">
+                                                <div class="module-header" style="justify-content: space-between;">
+                                                    <div style="display: flex; align-items: center; gap: 0.75rem;">
+                                                        <div class="module-icon">
+                                                            <i class="ph <?php echo $mod_info['icon']; ?>"></i>
+                                                        </div>
+                                                        <div>
+                                                            <div class="module-name"><?php echo htmlspecialchars($mod_info['label']); ?></div>
+                                                        </div>
+                                                    </div>
+                                                    <div class="role-status">
+                                                        <?php if($role_has_access): ?>
+                                                            <span class="text-xs text-success"><i class="ph-bold ph-check"></i> Por Rol: Sí</span>
+                                                        <?php else: ?>
+                                                            <span class="text-xs text-muted"><i class="ph-bold ph-x"></i> Por Rol: No</span>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div class="segmented-control">
+                                                    <label class="segment <?php echo $current_val === 'inherit' ? 'active' : ''; ?>">
+                                                        <input type="radio" name="perms[<?php echo $mod_key; ?>]" value="inherit" <?php echo $current_val === 'inherit' ? 'checked' : ''; ?>>
+                                                        <span>Heredar</span>
+                                                    </label>
+                                                    <label class="segment <?php echo $current_val === 'allow' ? 'active' : ''; ?>">
+                                                        <input type="radio" name="perms[<?php echo $mod_key; ?>]" value="1" <?php echo $current_val === 'allow' ? 'checked' : ''; ?>>
+                                                        <span>Permitir</span>
+                                                    </label>
+                                                    <label class="segment <?php echo $current_val === 'deny' ? 'active' : ''; ?>">
+                                                        <input type="radio" name="perms[<?php echo $mod_key; ?>]" value="0" <?php echo $current_val === 'deny' ? 'checked' : ''; ?>>
+                                                        <span>Denegar</span>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
+                        
+                        <div style="margin-top: 2rem; display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; border-top: 1px solid var(--border-color); z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                            <button type="submit" class="btn btn-primary" style="min-width: 200px;">
+                                <i class="ph ph-floppy-disk"></i> Guardar Excepciones
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            <?php endif; ?>
+        <?php endif; // End Target User check ?>
+    <?php endif; // End Subtab check ?>
+</div>
+
+<style>
+/* Segmented Control Styles (Reused) */
+.segmented-control {
+    display: flex;
+    background: var(--bg-body);
+    padding: 4px;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+.segment {
+    flex: 1;
+    text-align: center;
+    padding: 6px 4px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    border-radius: 4px;
+    position: relative;
+    user-select: none;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+.segment input {
+    position: absolute;
+    opacity: 0;
+    width: 0; 
+    height: 0;
+}
+.segment.active {
+    background: var(--bg-card); /* or highlight color */
+    color: var(--text-primary);
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+/* Allow/Deny Colors when Active */
+.segment:has(input[value="1"]).active { color: var(--success); }
+.segment:has(input[value="0"]).active { color: var(--danger); }
+
+/* Card Border Colors based on status */
+.module-card.allow { border-color: var(--success); }
+.module-card.deny { border-color: var(--danger); }
+.module-card.inherit-allow { border-left: 3px solid var(--success); } /* Optional visual cue */
+/* ... */
+</style>
+
+<script>
+// Re-enable interactivity for new elements
+document.addEventListener('DOMContentLoaded', function() {
+    const segments = document.querySelectorAll('.segment');
+    segments.forEach(segment => {
+        segment.addEventListener('click', function(e) {
+            const input = this.querySelector('input[type="radio"]');
+            if (e.target !== input) {
+                input.checked = true;
+            }
+            const control = this.closest('.segmented-control');
+            const card = this.closest('.module-card');
+            control.querySelectorAll('.segment').forEach(s => s.classList.remove('active'));
+            this.classList.add('active');
+            card.classList.remove('inherit-allow', 'inherit-deny', 'allow', 'deny', 'inherit');
+            
+            // Re-calc class simplified
+            let val = input.value;
+            if(val === 'inherit') {
+                // If inherit, we might want to check the server-side role again, 
+                // OR just remove the explicit color class.
+                // For simplified JS here, we just remove explicit colors.
+            } else if (val === '1') {
+                card.classList.add('allow');
+            } else {
+                card.classList.add('deny');
+            }
+        });
+    });
+});
+</script>
+
 
     <!-- TAB: USERS -->
     <div id="tab-users" style="display: <?php echo $active_tab == 'users' ? 'block' : 'none'; ?>;">
@@ -484,18 +1047,27 @@ require_once '../../includes/sidebar.php';
                             <th>Rol</th>
                             <th>Estado</th>
                             <th>Fecha Registro</th>
-                            <th style="text-align: center;">Acciones</th>
+                            <th style="width: 50px;"></th>
                         </tr>
                     </thead>
                     <tbody>
                         <?php if(count($users) > 0): ?>
                             <?php foreach($users as $user): ?>
-                            <tr>
+                            <?php 
+                                $is_super_user = ($user['id'] == 1);
+                                $row_style = $is_super_user ? "opacity: 0.7; cursor: not-allowed; background: rgba(0,0,0,0.02);" : "cursor: pointer; transition: background 0.2s;";
+                                $onclick = $is_super_user ? "" : "window.location.href='../users/edit.php?id={$user['id']}'";
+                            ?>
+                            <tr onclick="<?php echo $onclick; ?>" style="<?php echo $row_style; ?>" class="<?php echo $is_super_user ? '' : 'hover-row'; ?>">
                                 <td><strong>#<?php echo str_pad($user['id'], 4, '0', STR_PAD_LEFT); ?></strong></td>
                                 <td>
                                     <div style="display: flex; align-items: center; gap: 0.75rem;">
                                         <div class="user-avatar-sm" style="width: 32px; height: 32px; font-size: 0.9rem;">
-                                            <?php echo strtoupper(substr($user['username'], 0, 1)); ?>
+                                            <?php if($is_super_user): ?>
+                                                 <i class="ph-fill ph-lock-key" style="color: var(--warning);"></i>
+                                            <?php else: ?>
+                                                 <?php echo strtoupper(substr($user['username'], 0, 1)); ?>
+                                            <?php endif; ?>
                                         </div>
                                         <span class="font-medium"><?php echo htmlspecialchars($user['username']); ?></span>
                                     </div>
@@ -521,12 +1093,23 @@ require_once '../../includes/sidebar.php';
                                     </span>
                                 </td>
                                 <td><?php echo date('d/m/Y', strtotime($user['created_at'])); ?></td>
-                                <td style="text-align: center;">
-                                    <div class="table-actions">
-                                        <a href="../users/edit.php?id=<?php echo $user['id']; ?>" class="btn-icon" title="Editar">
-                                            <i class="ph ph-pencil-simple"></i>
-                                        </a>
+                                <td style="text-align: center; color: var(--text-muted); white-space: nowrap;">
+                                    
+                                    <div style="display: flex; align-items: center; justify-content: flex-end; gap: 10px;">
+                                        <?php if(can_access_module('users_delete', $pdo) && !$is_super_user && $user['id'] != $_SESSION['user_id']): ?>
+                                                <button type="button" class="btn-icon btn-icon-danger" 
+                                                    onclick='event.stopPropagation(); openDeleteModal(<?php echo $user['id']; ?>, <?php echo json_encode($user['username']); ?>);'
+                                                    title="Eliminar Usuario"
+                                                    style="background: none; border: none; cursor: pointer; color: var(--danger);">
+                                                    <i class="ph ph-trash"></i>
+                                                </button>
+                                        <?php endif; ?>
+
+                                        <?php if(!$is_super_user): ?>
+                                            <i class="ph ph-caret-right"></i>
+                                        <?php endif; ?>
                                     </div>
+
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -615,14 +1198,103 @@ require_once '../../includes/sidebar.php';
     border-bottom-color: var(--primary-500);
 }
 
-/* Checkbox Style */
-.custom-checkbox {
-    display: inline-block;
-    position: relative;
-    cursor: pointer;
-    width: 20px;
-    height: 20px;
+
+/* Permissions Grid Styles */
+.permissions-container {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
 }
+
+.category-title {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    padding-left: 0.25rem;
+    font-weight: 600;
+}
+
+.modules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.module-card {
+    background: var(--bg-hover); /* Slightly lighter than card base */
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    transition: all 0.2s ease;
+}
+
+.module-card:hover {
+    border-color: var(--primary-500);
+    background: var(--bg-card);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.module-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.module-icon {
+    width: 32px;
+    height: 32px;
+    background: rgba(var(--primary-rgb), 0.1);
+    color: var(--primary);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+}
+
+.module-name {
+    font-weight: 600;
+    font-size: 0.95rem;
+}
+
+.role-toggles {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.role-toggle-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+/* Updated Checkbox Style for Rows */
+.custom-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    cursor: pointer;
+    user-select: none;
+    width: 100%;
+}
+
+.role-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.custom-checkbox input:checked ~ .role-label {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
 .custom-checkbox input {
     position: absolute;
     opacity: 0;
@@ -630,26 +1302,32 @@ require_once '../../includes/sidebar.php';
     height: 0;
     width: 0;
 }
+
 .checkmark {
-    position: absolute;
-    top: 0; left: 0;
-    height: 20px; width: 20px;
-    background-color: var(--bg-hover);
+    position: relative;
+    height: 20px; 
+    width: 20px;
+    background-color: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: 4px;
+    flex-shrink: 0;
 }
+
 .custom-checkbox input:checked ~ .checkmark {
     background-color: var(--primary-500);
     border-color: var(--primary-500);
 }
+
 .checkmark:after {
     content: "";
     position: absolute;
     display: none;
 }
+
 .custom-checkbox input:checked ~ .checkmark:after {
     display: block;
 }
+
 .custom-checkbox .checkmark:after {
     left: 7px;
     top: 3px;
@@ -708,6 +1386,151 @@ document.getElementById('searchInput').addEventListener('keyup', function() {
             row.style.display = 'none';
         }
     });
+});
+</script>
+
+</script>
+
+<style>
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.modal-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 2rem;
+    width: 90%;
+    max-width: 450px;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.2);
+    transform: scale(0.95);
+    opacity: 0;
+    animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes popIn {
+    to { transform: scale(1); opacity: 1; }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 1rem;
+}
+
+
+.btn-modal {
+    padding: 12px 24px;
+    border-radius: 8px;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: 130px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.btn-modal-cancel {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-muted);
+}
+
+.btn-modal-cancel:hover {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-main);
+    border-color: var(--text-secondary);
+}
+
+.btn-modal-danger {
+    background: var(--danger);
+    border: none;
+    color: white;
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.25);
+}
+
+.btn-modal-danger:hover {
+    background: #dc2626;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(220, 38, 38, 0.35);
+}
+</style>
+
+<!-- DELETE CONFIRMATION MODAL -->
+<div id="deleteModal" class="modal-overlay">
+    <div class="modal-container" style="text-align: center;">
+        <div class="modal-header">
+            <div style="width: 72px; height: 72px; background: rgba(239, 68, 68, 0.1); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-bottom: 1.5rem; animation: pulseRed 2s infinite;">
+                <i class="ph-fill ph-trash" style="font-size: 36px; color: var(--danger);"></i>
+            </div>
+        </div>
+        <div class="modal-body">
+            <h3 style="font-size: 1.5rem; margin-bottom: 0.75rem; color: var(--text-main); font-weight: 600;">¿Eliminar Usuario?</h3>
+            <p style="color: var(--text-muted); margin-bottom: 2.5rem; font-size: 0.95rem; line-height: 1.6; max-width: 80%; margin-left: auto; margin-right: auto;">
+                Estás a punto de eliminar permanentemente a <strong id="deleteUserName" style="color: var(--text-main);">UNKNOWN</strong>.<br>
+                <span style="font-size: 0.85rem; opacity: 0.8;">Esta acción no se puede deshacer.</span>
+            </p>
+            
+            <form method="POST" id="confirmDeleteForm">
+                <input type="hidden" name="action" value="delete_user">
+                <input type="hidden" name="user_id" id="deleteUserIdInput">
+                
+                <div style="display: flex; gap: 1rem; justify-content: center;">
+                    <button type="button" class="btn-modal btn-modal-cancel" onclick="closeDeleteModal()">
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn-modal btn-modal-danger">
+                        Sí, eliminar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<style>
+@keyframes pulseRed {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    70% { box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+</style>
+
+<script>
+function openDeleteModal(userId, userName) {
+    document.getElementById('deleteUserIdInput').value = userId;
+    document.getElementById('deleteUserName').textContent = userName;
+    document.getElementById('deleteModal').style.display = 'flex';
+}
+
+function closeDeleteModal() {
+    document.getElementById('deleteModal').style.display = 'none';
+}
+
+// Close on outside click
+document.getElementById('deleteModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeDeleteModal();
+    }
 });
 </script>
 

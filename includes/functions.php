@@ -16,7 +16,7 @@ function has_permission($permission_code, $pdo) {
     if (!isset($_SESSION['user_id'])) return false;
     
     // Admins have all permissions
-    if ($_SESSION['role_name'] === 'Administrador') return true;
+    if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) return true;
     
     // Check if permission is cached in session to avoid DB calls
     if (isset($_SESSION['permissions']) && in_array($permission_code, $_SESSION['permissions'])) {
@@ -34,7 +34,7 @@ function has_permission($permission_code, $pdo) {
  */
 function can_access_module($module_name, $pdo) {
     if (!isset($_SESSION['user_id'])) return false;
-    if ($_SESSION['role_name'] === 'Administrador') return true;
+    if (isset($_SESSION['role_id']) && $_SESSION['role_id'] == 1) return true;
 
     $user_id = $_SESSION['user_id'];
     

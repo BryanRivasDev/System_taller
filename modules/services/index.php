@@ -10,6 +10,11 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Check permission
+if (!can_access_module('services', $pdo)) {
+    die("Acceso denegado.");
+}
+
 // Handle Technician Assignment
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'assign_tech') {
     if (in_array($_SESSION['role_id'], [1, 2, 4])) {

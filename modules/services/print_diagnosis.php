@@ -208,9 +208,29 @@ $elaborated_role = $_SESSION['role_name'] ?? 'Técnico';
 <body>
 
     <div class="actions">
-        <button onclick="history.back()" class="btn btn-secondary">Volver</button>
+        <button onclick="goBack()" class="btn btn-secondary">Volver</button>
         <button onclick="window.print()" class="btn btn-primary">Imprimir</button>
     </div>
+
+    <script>
+        function goBack() {
+            // Check if we came from reports module
+            if (document.referrer.includes('/reports/')) {
+                window.location.href = '../reports/index.php';
+            } else {
+                window.location.href = 'view.php?id=<?php echo $id; ?>';
+            }
+        }
+    </script>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.has('autoprint')) {
+                window.print();
+            }
+        });
+    </script>
 
     <div class="page-container">
         <!-- Header -->
@@ -245,7 +265,7 @@ $elaborated_role = $_SESSION['role_name'] ?? 'Técnico';
                 </div>
                 <div class="info-row">
                     <span class="label">No. Caso:</span>
-                    <span class="value"><?php echo $order['id']; ?></span>
+                    <span class="value" style="font-weight: bold; color: #2563eb;"><?php echo str_pad($order['id'], 5, '0', STR_PAD_LEFT); ?></span>
                 </div>
                 <?php if($order['invoice_number']): ?>
                 <div class="info-row">

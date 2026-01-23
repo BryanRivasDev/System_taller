@@ -54,6 +54,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 // Set flag to auto-print after save
                 $autoPrintDiagnosis = true;
+                
+                // Append diagnosis details to history note
+                $note .= "\n\n[Diagnóstico]\nProcedimiento: $proc\nConclusión: $conc";
             }
 
             update_service_status($pdo, $id, $new_status, $note, $_SESSION['user_id']);
@@ -490,30 +493,6 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                         </select>
                                     </div>
 
-                                    <!-- Spare Parts Selector (Hidden by default) -->
-                                    <!-- Spare Parts Selector (Hidden by default) -->
-                                    <div id="sparePartsContainer" style="display: none; margin-bottom: 1rem; background: rgba(255,255,255,0.03); padding: 0.75rem; border-radius: 8px;">
-                                        <label style="display: block; font-size: 0.8rem; color: var(--p-text-muted); margin-bottom: 0.5rem; font-weight: 600;">🛠️ Repuestos / Acciones</label>
-                                        <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                            <select id="partSelect" class="modern-select" style="font-size: 0.85rem; flex: 1.5;">
-                                                <option value="">-- Seleccionar Repuesto --</option>
-                                                <option value="Pantalla">Pantalla</option>
-                                                <option value="Batería">Batería</option>
-                                                <option value="Teclado">Teclado</option>
-                                                <option value="Disco SSD">Disco SSD</option>
-                                                <option value="Memoria RAM">Memoria RAM</option>
-                                                <option value="Centro de Carga">Centro de Carga</option>
-                                                <option value="Fuente de Poder">Fuente de Poder</option>
-                                                <option value="Cargador">Cargador</option>
-                                                <option value="Mantenimiento General">Mantenimiento General</option>
-                                                <option value="Limpieza Interna">Limpieza Interna</option>
-                                                <option value="Instalación Windows">Instalación Windows</option>
-                                            </select>
-                                            <input type="text" id="partSN" placeholder="S/N" class="modern-input" style="flex: 1; font-size: 0.85rem; padding: 0.5rem;">
-                                            <button type="button" id="btnAddPart" style="background: var(--p-border); color: white; border: none; padding: 0 0.75rem; border-radius: 6px; cursor: pointer; font-size: 1.2rem; height: 38px;">+</button>
-                                        </div>
-                                    </div>
-
                                     <div style="margin-bottom: 1rem;">
                                         <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nota de Progreso</label>
                                         <textarea name="note" id="progressNote" class="modern-textarea" rows="3" placeholder="Ej. Se realizó cambio de repuesto..." required></textarea>
@@ -568,74 +547,165 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                         </div>
                                     </div>
 
+                                    <!-- Repair Modal (New) -->
+                                    <div id="repairModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+                                        <div style="background: var(--p-bg-card); padding: 2rem; border-radius: 16px; width: 90%; max-width: 600px; max-height: 90vh; overflow-y: auto; border: 1px solid var(--p-border);">
+                                            <h2 style="margin-top: 0; color: var(--p-primary); margin-bottom: 1.5rem;">Gestión de Reparación</h2>
+                                            
+                                            <!-- Readonly Info (Client/Device) -->
+                                            <div style="margin-bottom: 1rem; padding: 1rem; background: rgba(255,255,255,0.05); border-radius: 8px;">
+                                                <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 0.5rem;">
+                                                    <span style="font-weight: bold; color: var(--p-primary);">Caso #<?php echo str_pad($order['id'], 6, '0', STR_PAD_LEFT); ?></span>
+                                                    <!-- Repair number is generated AFTER saving, so we don't show it here yet unless it already exists -->
+                                                    <?php if($order['repair_number']): ?>
+                                                        <span style="color: #34d399;">Rep #<?php echo str_pad($order['repair_number'], 5, '0', STR_PAD_LEFT); ?></span>
+                                                    <?php endif; ?>
+                                                </div>
+                                                <div style="font-weight: bold; margin-bottom: 0.25rem;"><?php echo htmlspecialchars($order['client_name']); ?></div>
+                                                <div style="font-size: 0.85rem; color: var(--p-text-muted);">
+                                                    <?php echo htmlspecialchars($order['brand'] . ' ' . $order['model']); ?>
+                                                </div>
+                                                <div style="margin-top: 0.5rem; font-size: 0.9rem;">
+                                                    <span style="color: var(--p-text-muted);">Falla:</span> 
+                                                    <?php echo htmlspecialchars($order['problem_reported']); ?>
+                                                </div>
+                                            </div>
+
+                                            <!-- Previous Diagnosis Info (If available) -->
+                                            <?php if($order['diagnosis_conclusion']): ?>
+                                            <div style="margin-bottom: 1.5rem; padding: 0.75rem; background: rgba(251, 191, 36, 0.1); border: 1px solid rgba(251, 191, 36, 0.2); border-radius: 8px;">
+                                                <label style="display: block; font-size: 0.8rem; color: #fbbf24; margin-bottom: 0.25rem; font-weight: 600;">Diagnóstico Previo</label>
+                                                <div style="font-size: 0.9rem; color: var(--p-text-main); white-space: pre-line;">
+                                                    <?php echo htmlspecialchars($order['diagnosis_conclusion']); ?>
+                                                </div>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <div style="margin-bottom: 1.5rem; background: rgba(255,255,255,0.03); padding: 1rem; border-radius: 8px;">
+                                                <label style="display: block; font-size: 0.9rem; color: var(--p-text-muted); margin-bottom: 0.5rem; font-weight: 600;">🛠️ Repuestos / Acciones</label>
+                                                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                                                    <select id="partSelect" class="modern-select" style="font-size: 0.85rem; flex: 1.5;">
+                                                        <option value="">-- Seleccionar Repuesto --</option>
+                                                        <option value="Pantalla">Pantalla</option>
+                                                        <option value="Batería">Batería</option>
+                                                        <option value="Teclado">Teclado</option>
+                                                        <option value="Disco SSD">Disco SSD</option>
+                                                        <option value="Memoria RAM">Memoria RAM</option>
+                                                        <option value="Centro de Carga">Centro de Carga</option>
+                                                        <option value="Fuente de Poder">Fuente de Poder</option>
+                                                        <option value="Cargador">Cargador</option>
+                                                        <option value="Mantenimiento General">Mantenimiento General</option>
+                                                        <option value="Limpieza Interna">Limpieza Interna</option>
+                                                        <option value="Instalación Windows">Instalación Windows</option>
+                                                    </select>
+                                                    <input type="text" id="partSN" placeholder="S/N" class="modern-input" style="flex: 1; font-size: 0.85rem; padding: 0.5rem;">
+                                                    <button type="button" id="btnAddPart" style="background: var(--p-border); color: white; border: none; padding: 0 0.75rem; border-radius: 6px; cursor: pointer; font-size: 1.2rem; height: 38px;">+</button>
+                                                </div>
+                                                <p style="font-size: 0.8rem; color: var(--p-text-muted); margin-top: 0.5rem;">Agrega los repuestos utilizados a la nota de reparación.</p>
+                                            </div>
+
+                                            <div style="margin-bottom: 1rem;">
+                                                <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nota de Reparación</label>
+                                                <textarea id="repairNoteModal" class="modern-textarea" rows="4" placeholder="Detalles de la reparación y repuestos utilizados..."></textarea>
+                                            </div>
+
+                                            <div style="display: flex; gap: 1rem; justify-content: flex-end;">
+                                                <button type="button" id="btnCancelRepair" class="btn btn-secondary" style="background: transparent; border: 1px solid var(--p-border); color: var(--p-text-main);">Cancelar</button>
+                                                <button type="button" id="btnConfirmRepair" class="btn btn-primary" style="background: #a855f7; border-color: #a855f7;">Confirmar Reparación</button>
+                                            </div>
+                                        </div>
+                                    </div>
+
                                 </form>
                             </div>
                             
                             <script>
                                 (function() {
                                     var statusSelect = document.getElementById('statusSelect');
-                                    var container = document.getElementById('sparePartsContainer');
-                                    var btn = document.getElementById('btnAddPart');
+                                    // Spare parts elements now in modal
+                                    var btnAddPart = document.getElementById('btnAddPart');
                                     var partSelect = document.getElementById('partSelect');
+                                    var partSN = document.getElementById('partSN');
+                                    
+                                    // Main note
                                     var progressNote = document.getElementById('progressNote');
+                                    
+                                    // Modals
+                                    var diagModal = document.getElementById('diagnosisModal');
+                                    var repairModal = document.getElementById('repairModal');
+                                    
+                                    // Modal Inputs
+                                    var repairNoteModal = document.getElementById('repairNoteModal');
 
-                                    function toggleParts() {
-                                        if (!statusSelect || !container) return;
-                                        if (statusSelect.value === 'in_repair') {
-                                            container.style.display = 'block';
-                                        } else {
-                                            container.style.display = 'none';
-                                        }
-                                    }
+                                    // Buttons
+                                    var btnConfirmDiag = document.getElementById('btnConfirmDiag');
+                                    var btnCancelDiag = document.getElementById('btnCancelDiag');
+                                    var btnConfirmRepair = document.getElementById('btnConfirmRepair');
+                                    var btnCancelRepair = document.getElementById('btnCancelRepair');
 
-                                    if (statusSelect) {
-                                        statusSelect.addEventListener('change', toggleParts);
-                                        // Run immediately
-                                        toggleParts();
-                                    }
-
-                                    // Modal Logic
-                                    var modal = document.getElementById('diagnosisModal');
-                                    var btnConfirm = document.getElementById('btnConfirmDiag');
-                                    var btnCancel = document.getElementById('btnCancelDiag');
                                     var previousStatus = statusSelect ? statusSelect.value : '';
                                     var form = statusSelect ? statusSelect.closest('form') : null;
 
-                                    if(statusSelect && modal) {
+                                    if(statusSelect) {
                                         statusSelect.addEventListener('focus', function() {
                                             previousStatus = this.value;
                                         });
 
                                         statusSelect.addEventListener('change', function() {
                                             if (this.value === 'diagnosing') {
-                                                modal.style.display = 'flex';
+                                                diagModal.style.display = 'flex';
+                                            } else if (this.value === 'in_repair') {
+                                                repairModal.style.display = 'flex';
+                                                // Pre-fill modal note if needed, or clear it
+                                                repairNoteModal.value = ""; 
                                             } else {
-                                                modal.style.display = 'none';
+                                                diagModal.style.display = 'none';
+                                                repairModal.style.display = 'none';
                                             }
                                         });
-                                        
-                                        btnCancel.addEventListener('click', function() {
-                                            modal.style.display = 'none';
-                                            statusSelect.value = previousStatus;
-                                            if(window.toggleParts) window.toggleParts(); // Re-check visibility
-                                        });
-                                        
-                                        btnConfirm.addEventListener('click', function() {
-                                            // Optional: Validation
-                                            form.submit();
-                                        });
+
+                                        // Diagnosis Modal Actions
+                                        if(btnCancelDiag) {
+                                            btnCancelDiag.addEventListener('click', function() {
+                                                diagModal.style.display = 'none';
+                                                statusSelect.value = previousStatus;
+                                            });
+                                        }
+                                        if(btnConfirmDiag) {
+                                            btnConfirmDiag.addEventListener('click', function() {
+                                                form.submit();
+                                            });
+                                        }
+
+                                        // Repair Modal Actions
+                                        if(btnCancelRepair) {
+                                            btnCancelRepair.addEventListener('click', function() {
+                                                repairModal.style.display = 'none';
+                                                statusSelect.value = previousStatus;
+                                            });
+                                        }
+                                        if(btnConfirmRepair) {
+                                            btnConfirmRepair.addEventListener('click', function() {
+                                                // Transfer note to main form
+                                                if(repairNoteModal.value.trim() !== "") {
+                                                    // Append or set
+                                                    progressNote.value = repairNoteModal.value;
+                                                }
+                                                form.submit();
+                                            });
+                                        }
                                     }
 
-                                    if (btn && partSelect && progressNote) {
-                                        var partSN = document.getElementById('partSN');
-                                        btn.addEventListener('click', function() {
+                                    // Spare Parts Logic (Inside Repair Modal)
+                                    if (btnAddPart && partSelect && repairNoteModal) {
+                                        btnAddPart.addEventListener('click', function() {
                                             var val = partSelect.value;
                                             var sn = partSN ? partSN.value.trim() : "";
                                             if(val) {
-                                                var entry = "Se requiere/utiliza: " + val;
+                                                var entry = "Se utiliza repuesto: " + val;
                                                 if(sn) entry += " (S/N: " + sn + ")";
                                                 
-                                                progressNote.value = (progressNote.value ? progressNote.value + "\n" : "") + entry;
+                                                repairNoteModal.value = (repairNoteModal.value ? repairNoteModal.value + "\n" : "") + entry;
                                                 
                                                 // Reset inputs
                                                 partSelect.value = "";
@@ -649,7 +719,7 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                             <?php if($autoPrintDiagnosis): ?>
                                 <script>
                                     document.addEventListener("DOMContentLoaded", function() {
-                                        window.location.href = 'print_diagnosis.php?id=<?php echo $id; ?>';
+                                        window.location.href = 'print_diagnosis.php?id=<?php echo $id; ?>&autoprint=1';
                                     });
                                 </script>
                             <?php endif; ?>

@@ -6,7 +6,8 @@ require_once '../../includes/functions.php';
 require_once '../../includes/auth.php';
 
 // Check permissions
-if ($_SESSION['role_id'] != 1) {
+// Check permissions
+if (!can_access_module('users', $pdo)) {
     die("Acceso denegado.");
 }
 
@@ -14,8 +15,9 @@ $error = '';
 $success = '';
 
 // Fetch Roles for Dropdown
+// Fetch Roles for Dropdown
 try {
-    $stmtRoles = $pdo->query("SELECT * FROM roles ORDER BY id ASC");
+    $stmtRoles = $pdo->query("SELECT * FROM roles WHERE id > 1 ORDER BY id ASC");
     $roles = $stmtRoles->fetchAll();
 } catch (PDOException $e) {
     $error = "Error al cargar roles: " . $e->getMessage();

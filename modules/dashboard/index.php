@@ -5,7 +5,16 @@ require_once '../../config/db.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/auth.php';
 
+
 $page_title = 'Dashboard';
+
+// Check Dashboard Access
+if (!can_access_module('dashboard', $pdo)) {
+    // If they have access to something else, redirect there, otherwise die
+    // For now, simple die or redirect to a specific error page if available
+    die("Acceso denegado al Dashboard. Contacte al administrador.");
+}
+
 require_once '../../includes/header.php';
 require_once '../../includes/sidebar.php';
 ?>

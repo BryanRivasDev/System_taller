@@ -3,8 +3,6 @@
 require_once 'config/db.php';
 
 try {
-    $pdo->beginTransaction();
-
     // 1. Create system_sequences table
     $pdo->exec("CREATE TABLE IF NOT EXISTS `system_sequences` (
       `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -43,11 +41,8 @@ try {
         }
     }
 
-    $pdo->commit();
     echo "Database structure updated successfully.";
 
 } catch (Exception $e) {
-    $pdo->rollBack();
     die("Error updating database: " . $e->getMessage());
 }
-?>

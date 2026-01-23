@@ -5,10 +5,11 @@ require_once '../../config/db.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/auth.php';
 
-// Check permission (assuming 'garantias' or general access)
-// For now, let's assume if they can access equipment, they might see this, or we add a new permission later.
-// validation: can_access_module('garantias', $pdo) ??
-// Let's check permissions table or just allow for now based on 'equipos' or 'admin'
+// Check permission
+if (!can_access_module('warranties', $pdo)) {
+    die("Acceso denegado.");
+}
+
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../../modules/auth/login.php");
     exit;

@@ -342,9 +342,26 @@ if (empty($order['exit_doc_number'])) {
 <body>
 
     <div class="actions">
+        <button onclick="goBack()" class="btn btn-secondary">Volver</button>
         <button onclick="window.print()" class="btn btn-primary">Imprimir</button>
-        <a href="exit.php" class="btn btn-secondary">Salir</a>
     </div>
+
+    <script>
+        function goBack() {
+            // Check if we came from specific modules
+            if (document.referrer.includes('/reports/')) {
+                window.location.href = '../reports/index.php';
+            } else if (document.referrer.includes('/equipment/exit.php')) {
+                window.location.href = 'exit.php';
+            } else if (document.referrer) {
+                // If there's a referrer, go back
+                history.back();
+            } else {
+                // Default fallback to exit module
+                window.location.href = 'exit.php';
+            }
+        }
+    </script>
 
     <div class="paper">
         <!-- HEADER -->
@@ -420,7 +437,7 @@ if (empty($order['exit_doc_number'])) {
                     <td><?php echo htmlspecialchars($order['problem_reported']); ?></td>
                 </tr>
                 <tr>
-                    <td colspan="2" style="font-weight: bold;"># CASO: <?php echo $order['id']; ?></td>
+                    <td colspan="2" style="font-weight: bold;"># CASO: <span style="color: #2563eb;"><?php echo str_pad($order['id'], 5, '0', STR_PAD_LEFT); ?></span></td>
                     <td colspan="2" style="vertical-align: top;">
                         <div style="font-weight: bold;"># DIAGNOSTICO: <?php echo $order['diagnosis_number'] ? str_pad($order['diagnosis_number'], 5, '0', STR_PAD_LEFT) : '-'; ?></div>
                         <?php if($diagnosisNote): ?>

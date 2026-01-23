@@ -10,6 +10,11 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Check permission
+if (!can_access_module('history', $pdo)) {
+    die("Acceso denegado.");
+}
+
 // Fetch All Delivered Orders (Service & Warranty)
 $stmt = $pdo->prepare("
     SELECT 

@@ -9,6 +9,9 @@ if (!isset($page_title)) $page_title = 'System Taller';
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($page_title); ?> - System Taller</title>
     
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/System_Taller/assets/favicon.png">
+    
     <!-- CSS -->
     <link rel="stylesheet" href="/System_Taller/assets/css/style.css?v=<?php echo time(); ?>">
     

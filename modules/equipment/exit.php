@@ -5,7 +5,7 @@ require_once '../../config/db.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/auth.php';
 
-if (!can_access_module('equipos', $pdo)) {
+if (!can_access_module('equipment', $pdo)) {
     die("Acceso denegado.");
 }
 
@@ -16,6 +16,7 @@ if (!can_access_module('equipos', $pdo)) {
 $stmt = $pdo->prepare("
     SELECT 
         so.id, so.status, so.final_cost, so.invoice_number,
+        c.id as client_id,
         c.name as client_name, 
         e.brand, e.model, e.serial_number, e.type
     FROM service_orders so
@@ -26,6 +27,16 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute();
 $orders = $stmt->fetchAll();
+
+// Group orders by client for multi-equipment delivery detection
+$clientGroups = [];
+foreach ($orders as $order) {
+    $clientId = $order['client_id'];
+    if (!isset($clientGroups[$clientId])) {
+        $clientGroups[$clientId] = [];
+    }
+    $clientGroups[$clientId][] = $order['id'];
+}
 
 $page_title = 'Salida de Equipos';
 require_once '../../includes/header.php';
@@ -41,6 +52,82 @@ require_once '../../includes/sidebar.php'; // Navbar
     <?php if(isset($_GET['success'])): ?>
         <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid var(--success); color: #6ee7b7; padding: 1rem; border-radius: var(--radius); margin-bottom: 1.5rem;">
             Equipo marcado como entregado correctamente.
+        </div>
+    <?php endif; ?>
+
+    <?php 
+    // Show multi-equipment print options
+    $multiClientGroups = array_filter($clientGroups, function($ids) { return count($ids) > 1; });
+    if (!empty($multiClientGroups)): 
+    ?>
+        <div style="background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
+            <div style="display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.25rem;">
+                <div style="background: rgba(16, 185, 129, 0.15); padding: 0.75rem; border-radius: 10px; display: flex; align-items: center; justify-content: center;">
+                    <i class="ph-fill ph-stack" style="font-size: 1.75rem; color: #10b981;"></i>
+                </div>
+                <div style="flex: 1;">
+                    <h4 style="margin: 0 0 0.5rem 0; color: #10b981; font-size: 1.1rem; font-weight: 700;">Entregas Múltiples Disponibles</h4>
+                    <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary); line-height: 1.5;">Haz clic en un cliente para imprimir todos sus equipos en una sola hoja de entrega</p>
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem;">
+                <?php 
+                foreach ($multiClientGroups as $clientId => $orderIds):
+                    // Get client name and equipment details
+                    $clientName = 'Cliente Desconocido';
+                    $equipmentList = [];
+                    
+                    foreach ($orders as $order) {
+                        if ($order['client_id'] == $clientId) {
+                            $clientName = $order['client_name'];
+                            $equipmentList[] = $order['brand'] . ' ' . $order['model'];
+                        }
+                    }
+                    
+                    $allIds = implode(',', $orderIds);
+                    $equipmentCount = count($orderIds);
+                ?>
+                    <div style="display: block; padding: 1rem; background: white; border: 2px solid rgba(16, 185, 129, 0.2); border-radius: 10px; transition: all 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.06);">
+                        
+                        <!-- Header -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem; padding-bottom: 0.75rem; border-bottom: 1px solid #e5e7eb;">
+                            <div style="display: flex; align-items: center; gap: 0.5rem; flex: 1; min-width: 0;">
+                                <i class="ph-fill ph-user-circle" style="color: #10b981; font-size: 1.25rem; flex-shrink: 0;"></i>
+                                <span style="font-weight: 600; font-size: 0.95rem; color: #1f2937; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="<?php echo htmlspecialchars($clientName); ?>">
+                                    <?php echo htmlspecialchars($clientName); ?>
+                                </span>
+                            </div>
+                            <span style="background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 0.25rem 0.6rem; border-radius: 20px; font-size: 0.8rem; font-weight: 700; white-space: nowrap;">
+                                <?php echo $equipmentCount; ?> equipo<?php echo $equipmentCount > 1 ? 's' : ''; ?>
+                            </span>
+                        </div>
+                        
+                        <!-- Equipment List -->
+                        <div style="margin-bottom: 0.75rem;">
+                            <?php foreach (array_slice($equipmentList, 0, 3) as $index => $equipment): ?>
+                                <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem; font-size: 0.85rem; color: #6b7280;">
+                                    <i class="ph ph-laptop" style="color: #6b7280; font-size: 0.9rem;"></i>
+                                    <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"><?php echo htmlspecialchars($equipment); ?></span>
+                                </div>
+                            <?php endforeach; ?>
+                            <?php if (count($equipmentList) > 3): ?>
+                                <div style="font-size: 0.8rem; color: #9ca3af; font-style: italic; margin-top: 0.25rem;">
+                                    +<?php echo count($equipmentList) - 3; ?> más...
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        
+                        <!-- Action Button -->
+                        <a href="deliver_confirm_multi.php?ids=<?php echo $allIds; ?>" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; padding: 0.6rem; background: linear-gradient(135deg, #10b981 0%, #059669 100%); border-radius: 6px; color: white; font-weight: 600; font-size: 0.9rem; text-decoration: none; transition: all 0.2s;"
+                           onmouseover="this.style.transform='scale(1.02)'; this.style.boxShadow='0 4px 8px rgba(16, 185, 129, 0.3)';"
+                           onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='none';">
+                            <i class="ph-fill ph-check-circle"></i>
+                            <span>Entregar Todos</span>
+                        </a>
+                    </div>
+                <?php endforeach; ?>
+            </div>
         </div>
     <?php endif; ?>
 
@@ -202,7 +289,7 @@ require_once '../../includes/sidebar.php'; // Navbar
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="print_delivery.php?id=<?php echo $dItem['id']; ?>" class="btn-icon" title="Imprimir Comprobante" target="_blank">
+                                    <a href="print_delivery.php?id=<?php echo $dItem['id']; ?>" class="btn-icon" title="Imprimir Comprobante">
                                         <i class="ph ph-printer"></i>
                                     </a>
                                 </td>
@@ -248,6 +335,7 @@ function setupTableSearch(inputId, tableId) {
 // Initialize searches
 setupTableSearch('searchInput', 'readyTable');
 setupTableSearch('searchHistoryInput', 'historyTable');
+
 </script>
 
 <?php
