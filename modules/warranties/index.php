@@ -128,14 +128,26 @@ require_once '../../includes/sidebar.php';
             <table id="activeTable">
                 <thead>
                     <tr>
-                        <th class="sortable" onclick="sortTable(1, 'activeTable')">Factura <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(2, 'activeTable')">Fecha Ingreso <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(4, 'activeTable')">Equipo <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(5, 'activeTable')">No. Serie <i class="ph ph-caret-up-down"></i></th>
+                        <th class="sortable" data-column="0">
+                            Factura <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="1">
+                            Fecha Ingreso <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="2">
+                            Equipo <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="3">
+                            No. Serie <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
                         <th>Falla Reportada</th>
                         <!-- Technical Column -->
-                        <th class="sortable" onclick="sortTable(7, 'activeTable')">Técnico <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(8, 'activeTable')">Estado <i class="ph ph-caret-up-down"></i></th>
+                        <th class="sortable" data-column="5">
+                            Técnico <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="6">
+                            Estado <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -246,13 +258,25 @@ require_once '../../includes/sidebar.php';
             <table id="historyTable">
                 <thead>
                     <tr>
-                        <th class="sortable" onclick="sortTable(0, 'historyTable')">Factura <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(1, 'historyTable')">Fecha Ingreso <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(2, 'historyTable')">Equipo <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(3, 'historyTable')">No. Serie <i class="ph ph-caret-up-down"></i></th>
+                        <th class="sortable" data-column="0">
+                            Factura <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="1">
+                            Fecha Ingreso <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="2">
+                            Equipo <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="3">
+                            No. Serie <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
                         <th>Falla Reportada</th>
-                        <th class="sortable" onclick="sortTable(7, 'historyTable')">Técnico <i class="ph ph-caret-up-down"></i></th>
-                        <th class="sortable" onclick="sortTable(8, 'historyTable')">Estado <i class="ph ph-caret-up-down"></i></th>
+                        <th class="sortable" data-column="5">
+                            Técnico <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="6">
+                            Estado <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -336,18 +360,45 @@ require_once '../../includes/sidebar.php';
 th {
     white-space: nowrap;
 }
+
+/* Sortable Column Headers */
 .sortable {
     cursor: pointer;
     user-select: none;
+    position: relative;
+    transition: all 0.2s;
 }
+
 .sortable:hover {
     background-color: var(--bg-hover);
+    color: var(--primary-500);
 }
-.sortable I {
-    font-size: 0.8rem;
+
+.sort-icon {
+    font-size: 0.75rem;
     margin-left: 0.25rem;
-    opacity: 0.5;
+    opacity: 0.4;
+    transition: all 0.2s;
 }
+
+.sortable:hover .sort-icon {
+    opacity: 0.7;
+}
+
+.sortable.asc .sort-icon,
+.sortable.desc .sort-icon {
+    opacity: 1;
+    color: var(--primary-500);
+}
+
+.sortable.asc .sort-icon::before {
+    content: "\f196"; /* ph-caret-up */
+}
+
+.sortable.desc .sort-icon::before {
+    content: "\f194"; /* ph-caret-down */
+}
+
 .clickable-row {
     transition: background-color 0.2s;
 }
@@ -355,10 +406,7 @@ th {
     background-color: var(--bg-hover);
 }
 .clickable-row:hover td {
-    color: var(--text-primary); /* Ensure text stays readable */
-}
-.clickable-row:hover td {
-    color: var(--text-primary); /* Ensure text stays readable */
+    color: var(--text-primary);
 }
 
 /* Fix Select Arrow Positioning */
@@ -415,48 +463,85 @@ document.getElementById('searchHistoryInput').addEventListener('keyup', function
     }
 });
 
-// Sort Functionality
-function sortTable(n, tableId) {
-  var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
-  table = document.getElementById(tableId);
-  switching = true;
-  dir = "asc"; 
-  
-  while (switching) {
-    switching = false;
-    rows = table.rows;
-    for (i = 1; i < (rows.length - 1); i++) {
-      shouldSwitch = false;
-      x = rows[i].getElementsByTagName("TD")[n];
-      y = rows[i + 1].getElementsByTagName("TD")[n];
-      
-      let xContent = x.innerText.toLowerCase();
-      let yContent = y.innerText.toLowerCase();
-
-      if (dir == "asc") {
-        if (xContent > yContent) {
-          shouldSwitch = true;
-          break;
+// Modern Sorting Functionality for Both Tables
+function setupTableSorting(tableId) {
+    const table = document.getElementById(tableId);
+    if (!table) return;
+    
+    const sortableHeaders = table.querySelectorAll('.sortable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    let originalRows = rows.filter(row => !row.querySelector('td[colspan]'));
+    let currentSortColumn = null;
+    let currentSortDirection = null;
+    
+    function sortTable(columnIndex, direction) {
+        const sortedRows = [...originalRows].sort((rowA, rowB) => {
+            const cellA = rowA.querySelectorAll('td')[columnIndex];
+            const cellB = rowB.querySelectorAll('td')[columnIndex];
+            
+            if (!cellA || !cellB) return 0;
+            
+            let textA = cellA.textContent.trim().toLowerCase();
+            let textB = cellB.textContent.trim().toLowerCase();
+            
+            // Try to parse as numbers for numeric sorting
+            const numA = parseFloat(textA);
+            const numB = parseFloat(textB);
+            
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return direction === 'asc' ? numA - numB : numB - numA;
+            }
+            
+            // Alphabetical sorting
+            if (direction === 'asc') {
+                return textA.localeCompare(textB, 'es');
+            } else {
+                return textB.localeCompare(textA, 'es');
+            }
+        });
+        
+        originalRows = sortedRows;
+        sortedRows.forEach(row => tbody.appendChild(row));
+        
+        sortableHeaders.forEach(header => {
+            header.classList.remove('asc', 'desc');
+        });
+        
+        const activeHeader = table.querySelector(`.sortable[data-column="${columnIndex}"]`);
+        if (activeHeader) {
+            activeHeader.classList.add(direction);
         }
-      } else if (dir == "desc") {
-        if (xContent < yContent) {
-          shouldSwitch = true;
-          break;
-        }
-      }
     }
-    if (shouldSwitch) {
-      rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
-      switching = true;
-      switchcount ++;      
-    } else {
-      if (switchcount == 0 && dir == "asc") {
-        dir = "desc";
-        switching = true;
-      }
-    }
-  }
+    
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const columnIndex = parseInt(this.dataset.column);
+            
+            let direction = 'asc';
+            if (currentSortColumn === columnIndex) {
+                if (currentSortDirection === 'asc') {
+                    direction = 'desc';
+                } else if (currentSortDirection === 'desc') {
+                    direction = null;
+                    currentSortColumn = null;
+                    currentSortDirection = null;
+                    sortableHeaders.forEach(h => h.classList.remove('asc', 'desc'));
+                    return;
+                }
+            }
+            
+            currentSortColumn = columnIndex;
+            currentSortDirection = direction;
+            sortTable(columnIndex, direction);
+        });
+    });
 }
+
+// Initialize sorting for both tables
+setupTableSorting('activeTable');
+setupTableSorting('historyTable');
 
 function openAssignModal(orderId, currentTechId) {
     document.getElementById('assignOrderId').value = orderId;

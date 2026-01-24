@@ -50,13 +50,21 @@ $clients = $stmt->fetchAll();
             </div>
         </div>
         <div class="table-container">
-            <table>
+            <table id="clientsTable">
                 <thead>
                     <tr>
-                        <th>Nombre</th>
-                        <th>DNI / RUC</th>
-                        <th>Contacto</th>
-                        <th>Dirección</th>
+                        <th class="sortable" data-column="0">
+                            Nombre <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="1">
+                            DNI / RUC <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="2">
+                            Contacto <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
+                        <th class="sortable" data-column="3">
+                            Dirección <i class="ph ph-caret-up-down sort-icon"></i>
+                        </th>
                         <th>Acciones</th>
                     </tr>
                 </thead>
@@ -103,6 +111,134 @@ $clients = $stmt->fetchAll();
         </div>
     </div>
 </div>
+
+<style>
+/* Sortable Column Headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.sortable:hover {
+    background-color: var(--bg-hover);
+    color: var(--primary-500);
+}
+
+.sort-icon {
+    font-size: 0.75rem;
+    margin-left: 0.25rem;
+    opacity: 0.4;
+    transition: all 0.2s;
+}
+
+.sortable:hover .sort-icon {
+    opacity: 0.7;
+}
+
+.sortable.asc .sort-icon,
+.sortable.desc .sort-icon {
+    opacity: 1;
+    color: var(--primary-500);
+}
+
+.sortable.asc .sort-icon::before {
+    content: "\f196"; /* ph-caret-up */
+}
+
+.sortable.desc .sort-icon::before {
+    content: "\f194"; /* ph-caret-down */
+}
+</style>
+
+<script>
+// Table Sorting Functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.getElementById('clientsTable');
+    const sortableHeaders = document.querySelectorAll('.sortable');
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    
+    // Store original rows (excluding "no results" row)
+    let originalRows = rows.filter(row => !row.querySelector('td[colspan]'));
+    let currentSortColumn = null;
+    let currentSortDirection = null;
+    
+    // Sorting functionality
+    function sortTable(columnIndex, direction) {
+        const sortedRows = [...originalRows].sort((rowA, rowB) => {
+            const cellA = rowA.querySelectorAll('td')[columnIndex];
+            const cellB = rowB.querySelectorAll('td')[columnIndex];
+            
+            if (!cellA || !cellB) return 0;
+            
+            let textA = cellA.textContent.trim().toLowerCase();
+            let textB = cellB.textContent.trim().toLowerCase();
+            
+            // Try to parse as numbers for numeric sorting
+            const numA = parseFloat(textA);
+            const numB = parseFloat(textB);
+            
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return direction === 'asc' ? numA - numB : numB - numA;
+            }
+            
+            // Alphabetical sorting
+            if (direction === 'asc') {
+                return textA.localeCompare(textB, 'es');
+            } else {
+                return textB.localeCompare(textA, 'es');
+            }
+        });
+        
+        // Update originalRows to maintain sort order
+        originalRows = sortedRows;
+        
+        // Re-append rows in sorted order
+        sortedRows.forEach(row => tbody.appendChild(row));
+        
+        // Update header indicators
+        sortableHeaders.forEach(header => {
+            header.classList.remove('asc', 'desc');
+        });
+        
+        const activeHeader = document.querySelector(`.sortable[data-column="${columnIndex}"]`);
+        if (activeHeader) {
+            activeHeader.classList.add(direction);
+        }
+    }
+    
+    // Add click handlers to sortable headers
+    sortableHeaders.forEach(header => {
+        header.addEventListener('click', function() {
+            const columnIndex = parseInt(this.dataset.column);
+            
+            // Determine sort direction
+            let direction = 'asc';
+            if (currentSortColumn === columnIndex) {
+                if (currentSortDirection === 'asc') {
+                    direction = 'desc';
+                } else if (currentSortDirection === 'desc') {
+                    // Reset to original order
+                    direction = null;
+                    currentSortColumn = null;
+                    currentSortDirection = null;
+                    
+                    // Remove all sort classes
+                    sortableHeaders.forEach(h => h.classList.remove('asc', 'desc'));
+                    return;
+                }
+            }
+            
+            currentSortColumn = columnIndex;
+            currentSortDirection = direction;
+            
+            sortTable(columnIndex, direction);
+        });
+    });
+});
+</script>
 
 <?php
 require_once '../../includes/footer.php';

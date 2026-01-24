@@ -173,6 +173,13 @@ h3 { font-size: 1.25rem; }
     animation: slideUp 0.15s ease-out;
 }
 
+/* Light mode dropdown */
+body.light-mode .dropdown-content {
+    background-color: white;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--slate-200);
+}
+
 .dropdown-item {
     padding: 0.75rem 1rem;
     color: var(--text-primary); /* Brighter text */
@@ -260,6 +267,18 @@ h3 { font-size: 1.25rem; }
     border-color: rgba(99, 102, 241, 0.3);
 }
 
+/* Light mode card overrides */
+body.light-mode .card {
+    background-color: white;
+    border: 1px solid var(--slate-200);
+    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+body.light-mode .card:hover {
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    border-color: var(--primary-500);
+}
+
 /* Stats Grid */
 .stats-grid {
     display: grid;
@@ -281,6 +300,11 @@ h3 { font-size: 1.25rem; }
     display: flex; align-items: center; justify-content: center;
     font-size: 1.5rem;
     margin-bottom: 1rem;
+}
+
+/* Light mode stat icon backgrounds */
+body.light-mode .stat-icon {
+    background-color: rgba(99, 102, 241, 0.1) !important;
 }
 
 .stat-value { font-size: 1.75rem; font-weight: 700; margin-bottom: 0.25rem; }
@@ -423,6 +447,17 @@ td {
     font-family: var(--font-main);
     font-size: 0.95rem;
     transition: all 0.2s;
+}
+
+/* Light mode form control override */
+body.light-mode .form-control {
+    background-color: white;
+    border: 1px solid var(--slate-300);
+}
+
+body.light-mode .form-control:focus {
+    background-color: white;
+    border-color: var(--primary-500);
 }
 
 /* Input group with icon */
@@ -571,6 +606,127 @@ td {
 
 .table-actions .btn-icon {
     margin-left: 0;
+}
+
+/* Theme Toggle Button */
+.theme-toggle {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary-600), var(--primary-500));
+    border: 2px solid var(--border-color);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 20px var(--primary-glow);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55), 
+                opacity 0.5s ease, 
+                transform 0.5s ease;
+    overflow: hidden;
+}
+
+/* Hidden state */
+.theme-toggle.hidden {
+    opacity: 0;
+    transform: translateX(100px);
+    pointer-events: none;
+}
+
+.theme-toggle:hover {
+    transform: scale(1.1) rotate(10deg);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 30px var(--primary-glow);
+}
+
+.theme-toggle:active {
+    transform: scale(0.95);
+}
+
+.theme-toggle-icon {
+    font-size: 1.5rem;
+    color: white;
+    transition: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    position: absolute;
+}
+
+.theme-toggle-icon.sun {
+    opacity: 0;
+    transform: rotate(-180deg) scale(0);
+}
+
+.theme-toggle-icon.moon {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+body.light-mode .theme-toggle-icon.sun {
+    opacity: 1;
+    transform: rotate(0deg) scale(1);
+}
+
+body.light-mode .theme-toggle-icon.moon {
+    opacity: 0;
+    transform: rotate(180deg) scale(0);
+}
+
+/* Ripple effect on click */
+.theme-toggle::before {
+    content: '';
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(0);
+    transition: transform 0.6s ease-out;
+}
+
+.theme-toggle.ripple::before {
+    transform: scale(2);
+    opacity: 0;
+}
+
+/* Tooltip */
+.theme-toggle::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: 70px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    white-space: nowrap;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(10px);
+    transition: all 0.3s ease;
+    border: 1px solid var(--border-color);
+    box-shadow: var(--shadow-card);
+}
+
+.theme-toggle:hover::after {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Pulse animation for first-time users */
+@keyframes pulse {
+    0%, 100% {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 20px var(--primary-glow);
+    }
+    50% {
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 40px var(--primary-glow);
+    }
+}
+
+.theme-toggle.pulse {
+    animation: pulse 2s ease-in-out infinite;
 }
 
 

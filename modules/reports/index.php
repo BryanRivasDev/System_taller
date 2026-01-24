@@ -59,7 +59,7 @@ require_once '../../includes/header.php';
 require_once '../../includes/sidebar.php';
 ?>
 
-<div class="main-content" style="padding: 2.5rem;">
+<div class="main-content" style="padding: 2.5rem; overflow: visible;">
     <div class="page-header" style="margin-bottom: 2.5rem;">
         <div style="display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem;">
             <div style="width: 48px; height: 48px; background: rgba(var(--primary-rgb), 0.1); border-radius: 14px; display: flex; align-items: center; justify-content: center;">
@@ -99,20 +99,36 @@ require_once '../../includes/sidebar.php';
     </div>
 
     <!-- Table -->
-    <div class="card">
-        <div class="card-body p-0">
+    <div class="card" style="overflow: visible;">
+        <div class="card-body p-0" style="overflow: visible;">
             <div class="table-responsive">
                 <table class="table" id="reportsTable">
                     <thead>
                         <tr>
-                            <th>ID</th>
-                            <th>Fecha</th>
-                            <th>Cliente</th>
-                            <th>Equipo</th>
-                            <th>Tipo</th>
-                            <th>Estado</th>
-                            <th># Diagnóstico</th>
-                            <th>Técnico</th>
+                            <th class="sortable" data-column="0">
+                                ID <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="1">
+                                Fecha <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="2">
+                                Cliente <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="3">
+                                Equipo <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="4">
+                                Tipo <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="5">
+                                Estado <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="6">
+                                # Diagnóstico <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="7">
+                                Técnico <i class="ph ph-caret-up-down sort-icon"></i>
+                            </th>
                             <th class="text-end">Imprimir</th>
                         </tr>
                     </thead>
@@ -167,7 +183,7 @@ require_once '../../includes/sidebar.php';
                                 <td class="text-end" style="padding-right: 1.5rem;">
                                     <div class="report-dropdown">
                                         <button class="premium-action-btn" onclick="toggleReportDropdown(this)">
-                                            <i class="ph-bold ph-printer"></i>
+                                            <i class="ph-fill ph-printer"></i>
                                         </button>
                                         <div class="report-dropdown-menu">
                                             <div class="dropdown-header">DOCUMENTOS</div>
@@ -290,6 +306,23 @@ require_once '../../includes/sidebar.php';
     color: white; /* White text for options */
 }
 
+/* Light mode overrides for select dropdowns */
+body.light-mode .premium-select {
+    background-color: white;
+    color: var(--slate-900);
+    border-color: var(--slate-300);
+}
+
+body.light-mode .premium-select option {
+    background-color: white;
+    color: var(--slate-900);
+}
+
+body.light-mode .premium-select:hover {
+    border-color: var(--primary-500);
+    background-color: var(--slate-50);
+}
+
 .select-caret {
     position: absolute;
     right: 1.25rem;
@@ -302,9 +335,14 @@ require_once '../../includes/sidebar.php';
 /* Table Enhancements */
 .table-responsive {
     border-radius: 20px;
-    overflow: hidden;
+    overflow: visible; /* Changed from hidden to visible */
     border: 1px solid var(--border-color);
     background: rgba(var(--bg-card-rgb), 0.2);
+}
+
+.table {
+    overflow: hidden; /* Keep table content contained */
+    border-radius: 20px;
 }
 
 .table thead th {
@@ -316,6 +354,11 @@ require_once '../../includes/sidebar.php';
     letter-spacing: 0.5px;
     border-bottom: 2px solid var(--border-color);
 }
+
+.table tbody tr {
+    position: relative; /* For proper z-index stacking */
+}
+
 
 .badge-tag {
     background: rgba(var(--primary-rgb), 0.1);
@@ -350,6 +393,29 @@ require_once '../../includes/sidebar.php';
     border-color: var(--primary);
 }
 
+/* Light mode overrides for action buttons */
+body.light-mode .premium-action-btn {
+    background: rgba(var(--primary-rgb), 0.05);
+    border-color: var(--slate-300);
+    color: var(--slate-700);
+}
+
+body.light-mode .premium-action-btn i {
+    color: var(--slate-700) !important;
+}
+
+body.light-mode .premium-action-btn:hover {
+    background: rgba(var(--primary-rgb), 0.15);
+    color: var(--slate-900);
+    transform: scale(1.1);
+    box-shadow: 0 8px 15px rgba(var(--primary-rgb), 0.25);
+    border-color: var(--primary) !important;
+}
+
+body.light-mode .premium-action-btn:hover i {
+    color: var(--slate-900) !important;
+}
+
 .report-dropdown {
     position: relative;
     display: inline-block;
@@ -359,20 +425,38 @@ require_once '../../includes/sidebar.php';
     display: none;
     position: absolute;
     right: 0;
-    top: calc(100% + 10px);
-    background: rgba(var(--bg-card-rgb), 0.8);
+    background: rgba(var(--bg-card-rgb), 0.95);
     backdrop-filter: blur(20px);
     border: 1px solid var(--border-color);
     border-radius: 16px;
     box-shadow: 0 15px 40px rgba(0,0,0,0.5);
     min-width: 240px;
-    z-index: 1000;
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 99999; /* Higher than navbar */
     padding: 0.75rem;
+}
+
+/* Default: open upward (for bottom rows) */
+.report-dropdown-menu {
+    bottom: calc(100% + 10px);
+    animation: slideUp 0.3s ease-out;
+}
+
+/* When at top: open downward */
+.report-dropdown.open-downward .report-dropdown-menu {
+    bottom: auto;
+    top: calc(100% + 10px);
     animation: slideDown 0.3s ease-out;
 }
 
 @keyframes slideDown {
     from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(10px); }
     to { opacity: 1; transform: translateY(0); }
 }
 
@@ -409,26 +493,176 @@ require_once '../../includes/sidebar.php';
 .dropdown-item i {
     font-size: 1.2rem;
 }
+
+/* Fix for dropdown overflow - ensure parent containers don't clip */
+.main-content,
+.card,
+.card-body,
+.table-responsive {
+    overflow: visible !important;
+}
+
+.table {
+    overflow: hidden;
+}
+
+.report-dropdown {
+    position: relative;
+    z-index: 1;
+}
+
+.report-dropdown.active {
+    z-index: 9999;
+}
+
+/* Additional fix for table rows */
+.table tbody tr {
+    position: relative;
+}
+
+.table tbody td {
+    position: relative;
+}
+
+/* Sortable Column Headers */
+.sortable {
+    cursor: pointer;
+    user-select: none;
+    position: relative;
+    transition: all 0.2s;
+}
+
+.sortable:hover {
+    background-color: var(--bg-hover);
+    color: var(--primary-500);
+}
+
+.sort-icon {
+    font-size: 0.75rem;
+    margin-left: 0.25rem;
+    opacity: 0.4;
+    transition: all 0.2s;
+}
+
+.sortable:hover .sort-icon {
+    opacity: 0.7;
+}
+
+.sortable.asc .sort-icon,
+.sortable.desc .sort-icon {
+    opacity: 1;
+    color: var(--primary-500);
+}
+
+.sortable.asc .sort-icon::before {
+    content: "\f196"; /* ph-caret-up */
+}
+
+.sortable.desc .sort-icon::before {
+    content: "\f194"; /* ph-caret-down */
+}
 </style>
 
 <script>
-// Search and Filtering
+// Table Sorting and Filtering Functionality
 const searchInput = document.getElementById('searchInput');
 const statusFilter = document.getElementById('statusFilter');
 const typeFilter = document.getElementById('typeFilter');
-const tableRows = document.querySelectorAll('#reportsTable tbody tr');
+const table = document.getElementById('reportsTable');
+const sortableHeaders = document.querySelectorAll('.sortable');
+const tbody = table.querySelector('tbody');
+const rows = Array.from(tbody.querySelectorAll('tr'));
 
+// Store original rows (excluding "no results" row)
+let originalRows = rows.filter(row => !row.querySelector('td[colspan]'));
+let currentSortColumn = null;
+let currentSortDirection = null;
+
+// Sorting functionality
+function sortTable(columnIndex, direction) {
+    const sortedRows = [...originalRows].sort((rowA, rowB) => {
+        const cellA = rowA.querySelectorAll('td')[columnIndex];
+        const cellB = rowB.querySelectorAll('td')[columnIndex];
+        
+        if (!cellA || !cellB) return 0;
+        
+        let textA = cellA.textContent.trim().toLowerCase();
+        let textB = cellB.textContent.trim().toLowerCase();
+        
+        // Try to parse as numbers for numeric sorting
+        const numA = parseFloat(textA);
+        const numB = parseFloat(textB);
+        
+        if (!isNaN(numA) && !isNaN(numB)) {
+            return direction === 'asc' ? numA - numB : numB - numA;
+        }
+        
+        // Alphabetical sorting
+        if (direction === 'asc') {
+            return textA.localeCompare(textB, 'es');
+        } else {
+            return textB.localeCompare(textA, 'es');
+        }
+    });
+    
+    // Update originalRows to maintain sort order
+    originalRows = sortedRows;
+    
+    // Re-append rows in sorted order
+    sortedRows.forEach(row => tbody.appendChild(row));
+    
+    // Update header indicators
+    sortableHeaders.forEach(header => {
+        header.classList.remove('asc', 'desc');
+    });
+    
+    const activeHeader = document.querySelector(`.sortable[data-column="${columnIndex}"]`);
+    if (activeHeader) {
+        activeHeader.classList.add(direction);
+    }
+    
+    // Re-apply filters after sorting
+    filterTable();
+}
+
+// Add click handlers to sortable headers
+sortableHeaders.forEach(header => {
+    header.addEventListener('click', function() {
+        const columnIndex = parseInt(this.dataset.column);
+        
+        // Determine sort direction
+        let direction = 'asc';
+        if (currentSortColumn === columnIndex) {
+            if (currentSortDirection === 'asc') {
+                direction = 'desc';
+            } else if (currentSortDirection === 'desc') {
+                // Reset to original order
+                direction = null;
+                currentSortColumn = null;
+                currentSortDirection = null;
+                
+                // Remove all sort classes
+                sortableHeaders.forEach(h => h.classList.remove('asc', 'desc'));
+                filterTable();
+                return;
+            }
+        }
+        
+        currentSortColumn = columnIndex;
+        currentSortDirection = direction;
+        
+        sortTable(columnIndex, direction);
+    });
+});
+
+// Filter functionality
 function filterTable() {
     const searchTerm = searchInput.value.toLowerCase();
-    const statusValue = statusFilter.value.toLowerCase();
-    const typeValue = typeFilter.value.toLowerCase();
+    const statusValue = statusFilter.value;
+    const typeValue = typeFilter.value;
 
-    tableRows.forEach(row => {
+    originalRows.forEach(row => {
         if(row.cells.length < 2) return;
-
-        const searchTerm = searchInput.value.toLowerCase();
-        const statusValue = statusFilter.value;
-        const typeValue = typeFilter.value;
 
         const rowText = row.innerText.toLowerCase();
         const rowStatus = row.getAttribute('data-status');
@@ -459,21 +693,67 @@ searchInput.addEventListener('keyup', filterTable);
 statusFilter.addEventListener('change', filterTable);
 typeFilter.addEventListener('change', filterTable);
 
-// Dropdown Handler
+// Dropdown Handler with Smart Positioning
 function toggleReportDropdown(btn) {
+    const dropdown = btn.parentElement;
+    const isCurrentlyActive = dropdown.classList.contains('active');
+    
     // Close all other dropdowns
     document.querySelectorAll('.report-dropdown.active').forEach(d => {
-        if (d !== btn.parentElement) d.classList.remove('active');
+        if (d !== dropdown) {
+            d.classList.remove('active', 'open-downward');
+        }
     });
     
-    btn.parentElement.classList.toggle('active');
+    if (isCurrentlyActive) {
+        // Close this dropdown
+        dropdown.classList.remove('active', 'open-downward');
+    } else {
+        // Open this dropdown
+        dropdown.classList.add('active');
+        
+        // Wait for dropdown to render to get accurate measurements
+        setTimeout(() => {
+            const btnRect = btn.getBoundingClientRect();
+            const dropdownMenu = dropdown.querySelector('.report-dropdown-menu');
+            
+            if (dropdownMenu) {
+                const dropdownHeight = dropdownMenu.offsetHeight;
+                const viewportHeight = window.innerHeight;
+                
+                // Calculate space available above and below
+                const spaceAbove = btnRect.top - 70; // 70px for navbar
+                const spaceBelow = viewportHeight - btnRect.bottom;
+                
+                // Choose direction based on available space
+                // Prefer downward if there's enough space, otherwise upward
+                if (spaceBelow >= dropdownHeight + 20) {
+                    // Enough space below, open downward
+                    dropdown.classList.add('open-downward');
+                } else if (spaceAbove >= dropdownHeight + 20) {
+                    // Not enough space below but enough above, open upward
+                    dropdown.classList.remove('open-downward');
+                } else {
+                    // Not enough space either way, choose the one with more space
+                    if (spaceBelow > spaceAbove) {
+                        dropdown.classList.add('open-downward');
+                    } else {
+                        dropdown.classList.remove('open-downward');
+                    }
+                }
+            }
+        }, 10);
+    }
+    
     event.stopPropagation();
 }
 
 // Close dropdowns on outside click
 document.addEventListener('click', function(e) {
     if (!e.target.closest('.report-dropdown')) {
-        document.querySelectorAll('.report-dropdown.active').forEach(d => d.classList.remove('active'));
+        document.querySelectorAll('.report-dropdown.active').forEach(d => {
+            d.classList.remove('active', 'open-downward');
+        });
     }
 });
 </script>
