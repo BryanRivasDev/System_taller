@@ -261,14 +261,38 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
         .mobile-hidden {
              display: block;
         }
-        @media (max-width: 900px) {
-            .layout-grid {
-                grid-template-columns: 1fr;
+            @media (max-width: 900px) {
+                .layout-grid {
+                    grid-template-columns: 1fr;
+                }
+                .mobile-hidden {
+                    display: none;
+                }
             }
-            .mobile-hidden {
-                display: none;
+            
+            /* Light Mode Overrides */
+            body.light-mode {
+                --p-bg-main: #f8fafc;
+                --p-bg-card: #ffffff;
+                --p-bg-input: #f1f5f9;
+                --p-border:   #e2e8f0;
+                --p-text-main: #0f172a;
+                --p-text-muted: #64748b;
             }
-        }
+
+            body.light-mode .problem-box,
+            body.light-mode .timeline-item .timeline-text + div {
+                background: #f1f5f9 !important;
+                color: #334155 !important;
+            }
+            
+            body.light-mode .modern-input, 
+            body.light-mode .modern-select, 
+            body.light-mode .modern-textarea {
+                color: #0f172a;
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+            }
         
         .sidebar-sticky {
             position: sticky;

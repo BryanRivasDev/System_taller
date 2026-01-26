@@ -5,7 +5,7 @@ require_once '../../config/db.php';
 require_once '../../includes/functions.php';
 require_once '../../includes/auth.php';
 
-if (!can_access_module('equipment', $pdo)) {
+if (!can_access_module('equipment', $pdo) && !can_access_module('equipment_exit', $pdo)) {
     die("Acceso denegado.");
 }
 

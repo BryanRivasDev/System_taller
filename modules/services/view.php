@@ -264,6 +264,30 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                     grid-template-columns: 1fr;
                 }
             }
+
+            /* Light Mode Overrides for View Page */
+            body.light-mode {
+                --p-bg-main: #f8fafc;
+                --p-bg-card: #ffffff;
+                --p-bg-input: #f1f5f9;
+                --p-border:   #e2e8f0;
+                --p-text-main: #0f172a;
+                --p-text-muted: #64748b;
+            }
+
+            body.light-mode .problem-box,
+            body.light-mode .timeline-item .timeline-text + div {
+                background: #f1f5f9 !important;
+                color: #334155 !important;
+            }
+            
+            body.light-mode .modern-input, 
+            body.light-mode .modern-select, 
+            body.light-mode .modern-textarea {
+                color: #0f172a;
+                background: #f1f5f9;
+                border-color: #cbd5e1;
+            }
         </style>
 
         <div class="view-container">

@@ -23,6 +23,8 @@ $defined_modules = [
     'dashboard' => 'Acceso al Dashboard',
     'clients'   => 'Gestión de Clientes',
     'equipment' => 'Gestión de Equipos',
+    'equipment_entry' => 'Registrar Entrada',
+    'equipment_exit' => 'Registrar Salida',
     'tools'     => 'Gestión de Herramientas',
     'services'  => 'Gestión de Servicios',
     'warranties'=> 'Gestión de Garantías',
@@ -31,7 +33,12 @@ $defined_modules = [
     'users'     => 'Gestión de Usuarios',
     'users_delete' => 'Eliminar Usuarios',
     'reports'   => 'Ver Reportes',
-    'settings'  => 'Configuración del Sistema'
+    'settings'  => 'Configuración del Sistema',
+    'settings_general' => 'Config. General',
+    'settings_roles'   => 'Gestión de Roles',
+    'settings_modules' => 'Control de Módulos',
+    'settings_users'   => 'Gestión de Usuarios (Admin)',
+    'settings_restore' => 'Restaurar Sistema',
 ];
 
 foreach ($defined_modules as $key => $desc) {
@@ -78,12 +85,17 @@ $pdo->exec("CREATE TABLE IF NOT EXISTS user_custom_modules (
 // Handle POST Actions
 $success_msg = '';
 $error_msg = '';
+
+if (isset($_GET['success'])) {
+    $success_msg = "Cambios guardados correctamente.";
+}
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general'; // Default to general
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     
     // --- UPDATE GENERAL SETTINGS (LOGO) ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_general_settings') {
+        if (!can_access_module('settings_general', $pdo) && !can_access_module('settings', $pdo)) die("Acceso denegado.");
         $active_tab = 'general';
         
         // Handle Logo Upload
@@ -131,6 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- CREATE ROLE ---
     if (isset($_POST['action']) && $_POST['action'] === 'create_role') {
+        if (!can_access_module('settings_roles', $pdo) && !can_access_module('settings', $pdo)) die("Acceso denegado.");
         $active_tab = 'roles';
         $role_name = clean($_POST['role_name']);
         
@@ -158,6 +171,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // --- UPDATE PERMISSIONS (ROLES) ---
     // --- UPDATE PERMISSIONS (ROLES - SINGLE or ALL) ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_permissions') {
+        if (!can_access_module('settings_modules', $pdo) && !can_access_module('settings', $pdo)) die("Acceso denegado.");
         $active_tab = 'modules';
         try {
             $pdo->beginTransaction();
@@ -215,6 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- UPDATE USER SPECIFIC PERMISSIONS ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_user_permissions') {
+        if (!can_access_module('settings_modules', $pdo) && !can_access_module('settings', $pdo)) die("Acceso denegado.");
         $active_tab = 'modules';
         $subtab = 'users'; // Stay on users tab
         $target_user_id = intval($_POST['user_id']);
@@ -272,11 +287,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtChk = $pdo->prepare("SELECT id FROM users WHERE id = ?");
                 $stmtChk->execute([$user_id_to_delete]);
                 if ($stmtChk->fetch()) {
-                    $stmtDel = $pdo->prepare("DELETE FROM users WHERE id = ?");
+                    // Soft Delete: Mark as inactive to preserve history
+                    $stmtDel = $pdo->prepare("UPDATE users SET status = 'inactive' WHERE id = ?");
                     if ($stmtDel->execute([$user_id_to_delete])) {
-                        $success_msg = "Usuario eliminado correctamente.";
+                        $success_msg = "Usuario desactivado correctamente. (El historial se conserva).";
                     } else {
-                        $error_msg = "Error al eliminar el usuario.";
+                        $error_msg = "Error al desactivar el usuario.";
                     }
                 } else {
                      $error_msg = "El usuario no existe.";
@@ -291,6 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // --- SYSTEM RESTORE ---
     if (isset($_POST['action']) && $_POST['action'] === 'system_restore') {
+        if (!can_access_module('settings_restore', $pdo) && !can_access_module('settings', $pdo)) die("Acceso denegado.");
         $active_tab = 'restore';
         $admin_pass = $_POST['admin_password'] ?? '';
         
@@ -412,6 +429,9 @@ require_once '../../includes/sidebar.php';
     </div>
 
     <div id="tab-general" style="display: <?php echo $active_tab == 'general' ? 'block' : 'none'; ?>;">
+        <?php if (!can_access_module('settings_general', $pdo) && !can_access_module('settings', $pdo)): ?>
+             <div class="card"><div class="text-center p-4">Acceso denegado a Configuración General.</div></div>
+        <?php else: ?>
         <div class="card" style="max-width: 100%;">
             <h3 class="mb-4">Configuración General</h3>
             
@@ -477,11 +497,15 @@ require_once '../../includes/sidebar.php';
                 </div>
             </form>
         </div>
+        <?php endif; ?>
     </div>
 </div>
 
 <!-- TAB: ROLES -->
 <div id="tab-roles" style="display: <?php echo $active_tab == 'roles' ? 'block' : 'none'; ?>;">
+    <?php if (!can_access_module('settings_roles', $pdo) && !can_access_module('settings', $pdo)): ?>
+         <div class="card"><div class="text-center p-4">Acceso denegado a Gestión de Roles.</div></div>
+    <?php else: ?>
     <div class="card" style="margin-bottom: 2rem;">
             <h3><i class="ph ph-plus-circle"></i> Crear Nuevo Rol</h3>
             <p class="text-muted mb-4">Agregue nuevos roles al sistema para asignar permisos específicos.</p>
@@ -561,11 +585,15 @@ require_once '../../includes/sidebar.php';
             </tbody>
         </table>
     </div>
+    <?php endif; ?>
 </div>
 
 
 <!-- TAB: MODULES -->
 <div id="tab-modules" style="display: <?php echo $active_tab == 'modules' ? 'block' : 'none'; ?>;">
+    <?php if (!can_access_module('settings_modules', $pdo) && !can_access_module('settings', $pdo)): ?>
+         <div class="card"><div class="text-center p-4">Acceso denegado a Control de Módulos.</div></div>
+    <?php else: ?>
     
     <?php
     $subtab = isset($_GET['subtab']) ? $_GET['subtab'] : 'roles';
@@ -630,6 +658,8 @@ require_once '../../includes/sidebar.php';
             
             'clients'   => ['label' => 'Clientes', 'cat' => 'Gestión', 'icon' => 'ph-users'],
             'equipment' => ['label' => 'Equipos', 'cat' => 'Gestión', 'icon' => 'ph-desktop'],
+            'equipment_entry' => ['label' => 'Reg. Entrada', 'cat' => 'Gestión', 'icon' => 'ph-download-simple'],
+            'equipment_exit' => ['label' => 'Reg. Salida', 'cat' => 'Gestión', 'icon' => 'ph-upload-simple'],
             'tools'     => ['label' => 'Herramientas', 'cat' => 'Gestión', 'icon' => 'ph-wrench'],
             'services'  => ['label' => 'Servicios', 'cat' => 'Gestión', 'icon' => 'ph-briefcase'],
             'warranties'=> ['label' => 'Garantías', 'cat' => 'Gestión', 'icon' => 'ph-shield-check'],
@@ -638,7 +668,12 @@ require_once '../../includes/sidebar.php';
             'users'     => ['label' => 'Usuarios', 'cat' => 'Administración', 'icon' => 'ph-user-gear'],
             'users_delete' => ['label' => 'Eliminar Usuarios', 'cat' => 'Administración', 'icon' => 'ph-trash'],
             'reports'   => ['label' => 'Reportes', 'cat' => 'Administración', 'icon' => 'ph-chart-bar'],
-            'settings'  => ['label' => 'Configuración', 'cat' => 'Administración', 'icon' => 'ph-gear']
+            'settings'  => ['label' => 'Config. Sistema', 'cat' => 'Administración', 'icon' => 'ph-gear'],
+            'settings_general' => ['label' => 'Conf. General', 'cat' => 'Administración', 'icon' => 'ph-sliders'],
+            'settings_roles'   => ['label' => 'Roles', 'cat' => 'Administración', 'icon' => 'ph-shield-check'],
+            'settings_modules' => ['label' => 'Módulos', 'cat' => 'Administración', 'icon' => 'ph-squares-four'],
+            'settings_users'   => ['label' => 'Usuarios (Admin)', 'cat' => 'Administración', 'icon' => 'ph-users-three'],
+            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon']
         ];
 
         // Group by Category
@@ -713,7 +748,7 @@ require_once '../../includes/sidebar.php';
                 <?php endforeach; ?>
             </div>
             
-            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; border-top: 1px solid var(--border-color); z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; position: sticky; bottom: 0; background: var(--bg-card); border-top: 1px solid var(--border-color); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
                 <button type="submit" class="btn btn-primary" style="min-width: 200px;">
                     <i class="ph ph-floppy-disk"></i> Guardar Permisos del Rol
                 </button>
@@ -733,6 +768,8 @@ require_once '../../includes/sidebar.php';
             
             'clients'   => ['label' => 'Clientes', 'cat' => 'Gestión', 'icon' => 'ph-users'],
             'equipment' => ['label' => 'Equipos', 'cat' => 'Gestión', 'icon' => 'ph-desktop'],
+            'equipment_entry' => ['label' => 'Reg. Entrada', 'cat' => 'Gestión', 'icon' => 'ph-download-simple'],
+            'equipment_exit' => ['label' => 'Reg. Salida', 'cat' => 'Gestión', 'icon' => 'ph-upload-simple'],
             'tools'     => ['label' => 'Herramientas', 'cat' => 'Gestión', 'icon' => 'ph-wrench'],
             'services'  => ['label' => 'Servicios', 'cat' => 'Gestión', 'icon' => 'ph-briefcase'],
             'warranties'=> ['label' => 'Garantías', 'cat' => 'Gestión', 'icon' => 'ph-shield-check'],
@@ -740,7 +777,12 @@ require_once '../../includes/sidebar.php';
             
             'users'     => ['label' => 'Usuarios', 'cat' => 'Administración', 'icon' => 'ph-user-gear'],
             'reports'   => ['label' => 'Reportes', 'cat' => 'Administración', 'icon' => 'ph-chart-bar'],
-            'settings'  => ['label' => 'Configuración', 'cat' => 'Administración', 'icon' => 'ph-gear']
+            'settings'  => ['label' => 'Config. Sistema', 'cat' => 'Administración', 'icon' => 'ph-gear'],
+            'settings_general' => ['label' => 'Conf. General', 'cat' => 'Administración', 'icon' => 'ph-sliders'],
+            'settings_roles'   => ['label' => 'Roles', 'cat' => 'Administración', 'icon' => 'ph-shield-check'],
+            'settings_modules' => ['label' => 'Módulos', 'cat' => 'Administración', 'icon' => 'ph-squares-four'],
+            'settings_users'   => ['label' => 'Usuarios (Admin)', 'cat' => 'Administración', 'icon' => 'ph-users-three'],
+            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon']
         ];
         
         // Group by Category (Reused Logic)
@@ -816,9 +858,13 @@ require_once '../../includes/sidebar.php';
                                 </td>
                                 <td>
                                     <?php if($u['status'] == 'active'): ?>
-                                        <span class="status-badge status-green">Activo</span>
+                                        <span class="status-badge status-green" style="display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="ph-fill ph-toggle-right" style="font-size: 1.1em;"></i> Activo
+                                        </span>
                                     <?php else: ?>
-                                        <span class="status-badge status-gray">Inactivo</span>
+                                        <span class="status-badge status-gray" style="display: inline-flex; align-items: center; gap: 4px;">
+                                            <i class="ph-fill ph-toggle-left" style="font-size: 1.1em;"></i> Inactivo
+                                        </span>
                                     <?php endif; ?>
                                 </td>
                                 <td style="color: var(--text-muted);">
@@ -940,6 +986,7 @@ require_once '../../includes/sidebar.php';
         <?php endif; // End Target User check ?>
     <?php endif; // End Subtab check ?>
 </div>
+<?php endif; ?>
 
 <style>
 /* Segmented Control Styles (Reused) */
@@ -1018,8 +1065,13 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 
 
-    <!-- TAB: USERS -->
-    <div id="tab-users" style="display: <?php echo $active_tab == 'users' ? 'block' : 'none'; ?>;">
+
+
+<!-- TAB: USERS -->
+<div id="tab-users" style="display: <?php echo $active_tab == 'users' ? 'block' : 'none'; ?>;">
+    <?php if (!can_access_module('settings_users', $pdo) && !can_access_module('settings', $pdo)): ?>
+         <div class="card"><div class="text-center p-4">Acceso denegado a Gestión de Usuarios.</div></div>
+    <?php else: ?>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
             <div>
                 <h3>Usuarios del Sistema</h3>
@@ -1128,11 +1180,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 </table>
             </div>
         </div>
+    <?php endif; ?>
     </div>
 
     <!-- TAB: RESTORE -->
     <div id="tab-restore" style="display: <?php echo $active_tab == 'restore' ? 'block' : 'none'; ?>;">
-        <div class="card" style="border: 1px solid var(--danger);">
+        <?php if (!can_access_module('settings_restore', $pdo) && !can_access_module('settings', $pdo)): ?>
+             <div class="card"><div class="text-center p-4">Acceso denegado a Restaurar Sistema.</div></div>
+        <?php else: ?>
+        <div class="card" style="border: 1px solid var(--danger); max-width: 700px;">
             <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
                 <div style="background: rgba(239, 68, 68, 0.1); padding: 1rem; border-radius: 12px; color: var(--danger);">
                     <i class="ph ph-warning-octagon" style="font-size: 2rem;"></i>
@@ -1157,7 +1213,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <input type="hidden" name="action" value="system_restore">
                         
                         <div class="form-group" style="max-width: 400px; margin-bottom: 1.5rem;">
-                            <label class="form-label">Contraseña de Administrador (para confirmar)</label>
+                            <label class="form-label">Contraseña de SuperAdmin (para confirmar)</label>
                             <input type="password" name="admin_password" class="form-control" placeholder="Ingresa tu contraseña actual" required>
                         </div>
                         
@@ -1168,6 +1224,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 </div>
 

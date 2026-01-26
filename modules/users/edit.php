@@ -160,21 +160,37 @@ require_once '../../includes/sidebar.php';
                     <div class="form-group">
                         <label class="form-label">Estado</label>
                         <div class="input-group">
-                            <select name="status" class="form-control" style="padding-left: 3rem;">
+                            <select name="status" id="statusSelect" class="form-control" style="padding-left: 3rem;">
                                 <option value="active" <?php echo $user['status'] == 'active' ? 'selected' : ''; ?>>Activo</option>
                                 <option value="inactive" <?php echo $user['status'] == 'inactive' ? 'selected' : ''; ?>>Inactivo</option>
                             </select>
-                            <i class="ph ph-toggle-left input-icon"></i>
+                            <i id="statusIcon" class="ph <?php echo $user['status'] == 'active' ? 'ph-toggle-right' : 'ph-toggle-left'; ?> input-icon" style="<?php echo $user['status'] == 'active' ? 'color: var(--success);' : ''; ?>"></i>
                         </div>
                     </div>
                 </div>
             </div>
 
+            <!-- Script for Dynamic Icon -->
+            <script>
+                document.getElementById('statusSelect').addEventListener('change', function() {
+                    const icon = document.getElementById('statusIcon');
+                    if(this.value === 'active') {
+                        icon.classList.remove('ph-toggle-left');
+                        icon.classList.add('ph-toggle-right');
+                        icon.style.color = 'var(--success)';
+                    } else {
+                        icon.classList.remove('ph-toggle-right');
+                        icon.classList.add('ph-toggle-left');
+                        icon.style.color = ''; // Reset color
+                    }
+                });
+            </script>
+
 
             <!-- MODULE PERMISSIONS SECTION REMOVED -->
 
 
-            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem; position: sticky; bottom: 0; background: rgba(17, 24, 39, 0.85); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; border-top: 1px solid var(--border-color); z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+            <div style="margin-top: 2rem; display: flex; justify-content: flex-end; gap: 1rem; position: sticky; bottom: 0; background: var(--bg-card); border-top: 1px solid var(--border-color); padding: 1.5rem; margin: 0 -1.5rem -1.5rem -1.5rem; z-index: 100; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
                 <a href="../settings/index.php?tab=users" class="btn btn-secondary">Cancelar</a>
                 <button type="submit" class="btn btn-primary" style="min-width: 150px;">
                     <i class="ph ph-floppy-disk"></i> Guardar Cambios

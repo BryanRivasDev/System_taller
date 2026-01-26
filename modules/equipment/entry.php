@@ -31,7 +31,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['ajax_action']) && $_P
 }
 // -----------------------------------
 
-if (!can_access_module('equipment', $pdo) && !can_access_module('new_order', $pdo) && !can_access_module('warranties', $pdo) && !can_access_module('new_warranty', $pdo)) {
+if (!can_access_module('equipment', $pdo) && !can_access_module('new_order', $pdo) && !can_access_module('warranties', $pdo) && !can_access_module('new_warranty', $pdo) && !can_access_module('equipment_entry', $pdo)) {
     die("Acceso denegado.");
 }
 

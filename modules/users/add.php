@@ -130,13 +130,29 @@ require_once '../../includes/sidebar.php';
             <div class="form-group">
                 <label class="form-label">Estado</label>
                 <div class="input-group">
-                    <select name="status" class="form-control" style="padding-left: 3rem;">
+                    <select name="status" id="statusSelect" class="form-control" style="padding-left: 3rem;">
                         <option value="active">Activo</option>
                         <option value="inactive">Inactivo</option>
                     </select>
-                    <i class="ph ph-toggle-left input-icon"></i>
+                    <i id="statusIcon" class="ph ph-toggle-right input-icon" style="color: var(--success);"></i>
                 </div>
             </div>
+
+            <!-- Script for Dynamic Icon -->
+            <script>
+                document.getElementById('statusSelect').addEventListener('change', function() {
+                    const icon = document.getElementById('statusIcon');
+                    if(this.value === 'active') {
+                        icon.classList.remove('ph-toggle-left');
+                        icon.classList.add('ph-toggle-right');
+                        icon.style.color = 'var(--success)';
+                    } else {
+                        icon.classList.remove('ph-toggle-right');
+                        icon.classList.add('ph-toggle-left');
+                        icon.style.color = ''; // Reset color
+                    }
+                });
+            </script>
 
             <div style="margin-top: 2rem; display: flex; justify-content: flex-end;">
                 <button type="submit" class="btn btn-primary">
