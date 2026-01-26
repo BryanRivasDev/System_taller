@@ -74,7 +74,7 @@ require_once '../../includes/sidebar.php';
 
     <!-- Filters & Search -->
     <div class="premium-filter-bar">
-        <div class="search-input-wrapper">
+        <div class="search-input-wrapper input-group">
             <i class="ph ph-magnifying-glass search-icon"></i>
             <input type="text" id="searchInput" class="premium-input search-box" placeholder="Buscar por cliente, equipo, ID...">
         </div>

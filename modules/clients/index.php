@@ -237,6 +237,45 @@ document.addEventListener('DOMContentLoaded', function() {
             sortTable(columnIndex, direction);
         });
     });
+    // Search functionality
+    const searchInput = document.querySelector('input[name="search"]');
+    const searchForm = searchInput ? searchInput.closest('form') : null;
+
+    if (searchInput) {
+        // Prevent form submission
+        if (searchForm) {
+            searchForm.addEventListener('submit', function(e) {
+                e.preventDefault();
+            });
+        }
+
+        let debounceTimer;
+
+        const triggerSearch = function(e) {
+            clearTimeout(debounceTimer);
+            const searchTerm = e.target.value;
+            
+            debounceTimer = setTimeout(() => {
+                fetch(`search_clients.php?search=${encodeURIComponent(searchTerm)}`)
+                    .then(response => response.text())
+                    .then(html => {
+                        tbody.innerHTML = html;
+                        
+                        // Update originalRows for sorting to work with new data
+                        originalRows = Array.from(tbody.querySelectorAll('tr')).filter(row => !row.querySelector('td[colspan]'));
+                        
+                        // Reset sort state
+                        currentSortColumn = null;
+                        currentSortDirection = null;
+                        sortableHeaders.forEach(h => h.classList.remove('asc', 'desc'));
+                    })
+                    .catch(error => console.error('Error searching:', error));
+            }, 300); // 300ms debounce
+        };
+
+        searchInput.addEventListener('input', triggerSearch);
+        searchInput.addEventListener('change', triggerSearch);
+    }
 });
 </script>
 
