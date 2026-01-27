@@ -227,13 +227,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->commit();
                 
                 if ($is_warranty_mode) {
-                     // For warranty, redirection logic
-                     header("Location: print_entry.php?id=" . $order_id);
+                     // For warranty, stay on page
+                     $success = "Datos de garantía actualizados correctamente.";
                 } else {
                      // For service, redirect to print entry
                      header("Location: print_entry.php?id=" . $order_id);
+                     exit;
                 }
-                exit;
 
             } else {
                 // INSERT NEW
@@ -263,8 +263,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 
                 $main_ref = $is_warranty_mode ? $sales_invoice : $invoice_number;
 
-                $stmtOrder = $pdo->prepare("INSERT INTO service_orders (equipment_id, client_id, invoice_number, service_type, status, problem_reported, accessories_received, entry_notes, entry_date) VALUES (?, ?, ?, ?, 'received', ?, ?, ?, NOW())");
-                $stmtOrder->execute([$equipment_id, $client_id, $main_ref, $service_type, $problem, $accessories, $notes]);
+                // SNAPSHOT SIGNATURE: Fetch current user's signature path
+                $stmtSig = $pdo->prepare("SELECT signature_path FROM users WHERE id = ?");
+                $stmtSig->execute([$_SESSION['user_id']]);
+                $currentUserSig = $stmtSig->fetchColumn();
+
+                $stmtOrder = $pdo->prepare("INSERT INTO service_orders (equipment_id, client_id, invoice_number, service_type, status, problem_reported, accessories_received, entry_notes, entry_date, entry_signature_path) VALUES (?, ?, ?, ?, 'received', ?, ?, ?, NOW(), ?)");
+                $stmtOrder->execute([$equipment_id, $client_id, $main_ref, $service_type, $problem, $accessories, $notes, $currentUserSig]);
                 $order_id = $pdo->lastInsertId();
 
                 if ($is_warranty_mode) {
@@ -273,7 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     $stmtHist = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'received', 'Garantía Registrada', ?)");
                     $stmtHist->execute([$order_id, $_SESSION['user_id']]);
-                    $success = "Garantía registrada correctamente (Orden #$order_id).";
+                    $success = "Garantía registrada correctamente.";
                 } else {
                     $stmtHist = $pdo->prepare("INSERT INTO service_order_history (service_order_id, action, notes, user_id) VALUES (?, 'received', 'Equipo ingresado al taller', ?)");
                     $stmtHist->execute([$order_id, $_SESSION['user_id']]);
@@ -401,7 +406,7 @@ require_once '../../includes/sidebar.php';
     </style>
 
     <div class="modern-form-container">
-        <form method="POST" action="">
+        <form method="POST" action="entry.php?<?php echo http_build_query($_GET); ?>">
             <?php if($edit_order): ?>
                 <input type="hidden" name="order_id" value="<?php echo $edit_order['id']; ?>">
             <?php endif; ?>
@@ -582,8 +587,10 @@ require_once '../../includes/sidebar.php';
                         <!-- Serial Number (Moved to Top) -->
                         <div class="form-group">
                             <label class="form-label">Serie (S/N) *</label>
-                            <div class="input-group" style="display: flex; align-items: center; gap: 0;">
-                                <input type="text" name="serial_number" id="serial_number_std" class="form-control" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>" style="border-top-right-radius: 0; border-bottom-right-radius: 0; padding-left: 0.5rem;">
+                            <div style="display: flex; align-items: center; gap: 0;">
+                                <div class="input-group" style="flex: 1;">
+                                    <input type="text" name="serial_number" id="serial_number_std" class="form-control" required value="<?php echo $edit_order['serial_number'] ?? ''; ?>" style="border-top-right-radius: 0; border-bottom-right-radius: 0; padding-left: 0.5rem;">
+                                </div>
                                 <button type="button" class="btn-verify-serial" data-target="#serial_number_std" title="Verificar Garantía" style="border: 1px solid var(--border-color); border-left: none; background: var(--bg-card); cursor: pointer; color: var(--primary-500); display: flex; align-items: center; padding: 0.625rem 1rem; border-top-right-radius: 6px; border-bottom-right-radius: 6px; height: 100%;">
                                     <i class="ph ph-magnifying-glass" style="font-size: 1.2rem;"></i>
                                 </button>
@@ -761,7 +768,7 @@ require_once '../../includes/sidebar.php';
 
             <?php endif; ?>
 
-            <div style="text-align: right; margin-top: -4rem;">
+            <div style="text-align: right; margin-top: -4rem; position: relative; z-index: 10;">
                 <button type="submit" class="btn btn-primary" style="padding: 0.75rem 2rem; font-weight: 600;">
                     <i class="ph ph-floppy-disk"></i> <?php echo $edit_order ? 'Guardar Cambios' : 'Guardar Registro'; ?>
                 </button>

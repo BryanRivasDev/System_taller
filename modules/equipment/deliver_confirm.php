@@ -81,9 +81,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             $pdo->beginTransaction();
 
+            // SNAPSHOT SIGNATURE: Fetch current user's signature path
+            $stmtSig = $pdo->prepare("SELECT signature_path FROM users WHERE id = ?");
+            $stmtSig->execute([$_SESSION['user_id']]);
+            $currentUserSig = $stmtSig->fetchColumn();
+
             // Update Order
-            $stmt = $pdo->prepare("UPDATE service_orders SET status = 'delivered', exit_date = NOW(), authorized_by_user_id = ? WHERE id = ?");
-            $stmt->execute([$_SESSION['user_id'], $id]);
+            $stmt = $pdo->prepare("UPDATE service_orders SET status = 'delivered', exit_date = NOW(), authorized_by_user_id = ?, exit_signature_path = ? WHERE id = ?");
+            $stmt->execute([$_SESSION['user_id'], $currentUserSig, $id]);
 
             // Log History (with delivery details)
             $history_note = "Entregado a: $receiver_name ($receiver_id). Notas: $delivery_notes";

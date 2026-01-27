@@ -42,7 +42,7 @@ if ($is_tech) {
     // --- TECHNICIAN VIEW ---
     
     // KPI 1: My Assignments
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status NOT IN ('delivered', 'cancelled')");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status NOT IN ('delivered', 'cancelled') AND service_type = 'service'");
     $stmt->execute([$user_id]);
     $kpi1_val = $stmt->fetchColumn();
     $kpi1_label = "Mis Asignaciones";
@@ -88,7 +88,7 @@ if ($is_tech) {
         FROM service_orders so
         JOIN clients c ON so.client_id = c.id
         JOIN equipments e ON so.equipment_id = e.id
-        WHERE so.assigned_tech_id = ?
+        WHERE so.assigned_tech_id = ? AND so.service_type = 'service'
         ORDER BY so.entry_date DESC LIMIT 5
     ";
     $stmt = $pdo->prepare($recentSql);
@@ -99,7 +99,7 @@ if ($is_tech) {
     // --- RECEPTION VIEW ---
 
     // KPI 1: Received Today
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE DATE(entry_date) = CURDATE()");
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE DATE(entry_date) = CURDATE() AND service_type = 'service'");
     $stmt->execute();
     $kpi1_val = $stmt->fetchColumn();
     $kpi1_label = "Recibidos Hoy";
@@ -141,6 +141,7 @@ if ($is_tech) {
         FROM service_orders so
         JOIN clients c ON so.client_id = c.id
         JOIN equipments e ON so.equipment_id = e.id
+        WHERE so.service_type = 'service'
         ORDER BY so.entry_date DESC LIMIT 5
     ");
     $recentItems = $stmt->fetchAll();
@@ -288,7 +289,7 @@ if ($is_tech) {
     $kpi4_bg = "rgba(239, 68, 68, 0.1)";
 
     // Chart: Global Status
-    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') GROUP BY status");
+    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') AND service_type = 'service' GROUP BY status");
     $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
     // Recent Activity: All Orders
@@ -297,6 +298,7 @@ if ($is_tech) {
         FROM service_orders so
         JOIN clients c ON so.client_id = c.id
         JOIN equipments e ON so.equipment_id = e.id
+        WHERE so.service_type = 'service'
         ORDER BY so.entry_date DESC LIMIT 5
     ");
     $recentItems = $stmt->fetchAll();

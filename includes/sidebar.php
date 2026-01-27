@@ -114,6 +114,9 @@
         <i class="ph-bold ph-caret-down" style="font-size: 0.8rem; margin-left: 0.5rem; color: var(--text-secondary);"></i>
         
         <div class="dropdown-content" style="left: auto; right: 0; min-width: 180px; top: 100%;">
+            <a href="/System_Taller/modules/profile/index.php" class="dropdown-item">
+                <i class="ph ph-user-circle"></i> Mi Perfil
+            </a>
             <?php if(can_access_module('settings', $pdo)): ?>
             <a href="/System_Taller/modules/settings/index.php" class="dropdown-item">
                 <i class="ph ph-gear"></i> Configuración
@@ -236,4 +239,5 @@
 })();
 </script>
 
+<div class="scroll-wrapper">
 <main class="main-content">

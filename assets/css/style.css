@@ -64,7 +64,8 @@ body {
     color: var(--text-primary);
     line-height: 1.5;
     transition: background-color 0.3s, color 0.3s;
-    overflow-x: hidden;
+    overflow: hidden; /* Disable body scroll */
+    height: 100vh; /* Full viewport height */
 }
 
 /* Scrollbar */
@@ -90,22 +91,31 @@ h3 { font-size: 1.25rem; }
 .wrapper {
     display: flex;
     flex-direction: column; /* Stack top to bottom */
-    min-height: 100vh;
+    height: 100vh;
+    overflow: hidden; /* Prevent wrapper scroll */
 }
 
 /* Navbar (Horizontal) */
 .navbar {
     height: 70px;
-    background-color: var(--bg-sidebar); /* Use same bg variable or change to transparent if desired */
+    background-color: var(--bg-sidebar); 
     border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 0 2rem;
-    position: sticky;
-    top: 0;
+    flex-shrink: 0; /* Keep navbar fixed height */
     z-index: 100;
     backdrop-filter: blur(12px); /* Glass effect */
+}
+
+/* Scroll Wrapper for content below navbar */
+.scroll-wrapper {
+    flex: 1; /* Take remaining space */
+    overflow-y: auto; /* Enable vertical scroll */
+    overflow-x: hidden;
+    position: relative;
+    width: 100%;
 }
 
 .navbar-brand {
@@ -241,10 +251,9 @@ body.light-mode .dropdown-content {
 
 /* Main Content */
 .main-content {
-    flex: 1;
-    margin-left: 0; /* Remove sidebar margin */
+    /* No longer handles scroll or centering directly, wrapper does scroll */
     padding: 2.5rem;
-    max-width: 1400px; /* Center content nicely */
+    max-width: 1400px; 
     margin: 0 auto;
     width: 100%;
 }

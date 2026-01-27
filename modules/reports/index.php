@@ -353,6 +353,7 @@ body.light-mode .premium-select:hover {
     font-size: 0.75rem;
     letter-spacing: 0.5px;
     border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
 }
 
 .table tbody tr {

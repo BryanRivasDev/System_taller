@@ -422,10 +422,39 @@ if (empty($order['entry_doc_number'])) {
             <!-- SIGNATURES -->
             <div class="signatures-area">
                 <div class="sig-box">
-                    <div style="height: 20px;"></div>
+                    <?php 
+                        // SNAPSHOT LOGIC: Use preserved signature if available, otherwise fallback to current user profile
+                        $sigPath = $entry_order['entry_signature_path'] ?? null;
+                        
+                        // Fetch role (and signature fallback)
+                        $stmtSig = $pdo->prepare("SELECT u.signature_path, r.name as role_name 
+                                                  FROM users u 
+                                                  LEFT JOIN roles r ON u.role_id = r.id 
+                                                  WHERE u.username = ?");
+                        $stmtSig->execute([$received_by]);
+                        $userData = $stmtSig->fetch();
+                        
+                        // If no snapshot, use current
+                        if (!$sigPath) {
+                            $sigPath = $userData['signature_path'] ?? null;
+                        }
+                        
+                        $roleName = $userData['role_name'] ?? 'Taller';
+                        
+                        if ($sigPath && file_exists('../../assets/uploads/signatures/' . $sigPath)):
+                    ?>
+                        <div style="height: 40px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: -15px; position: relative; z-index: 1; top: 15px;">
+                             <img src="../../assets/uploads/signatures/<?php echo $sigPath; ?>" style="max-height: 50px; max-width: 150px;">
+                        </div>
+                    <?php else: ?>
+                         <div style="height: 25px;"></div>
+                    <?php endif; ?>
+                    
                     <div class="sig-line"></div>
-                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Recibí Conforme (Taller)</div>
+                    
+                    <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Recibí Conforme</div>
                     <div style="font-size: 10px;"><?php echo htmlspecialchars($received_by); ?></div>
+                    <div style="font-size: 10px; font-weight: bold;"><?php echo htmlspecialchars($roleName); ?></div>
                 </div>
                 
                  <div class="sig-box">

@@ -361,16 +361,11 @@ if (empty($exit_doc_number)) {
 
     <script>
         function goBack() {
-            // Check if we came from specific modules
+             // Check if we came from reports module specifically
             if (document.referrer.includes('/reports/')) {
                 window.location.href = '../reports/index.php';
-            } else if (document.referrer.includes('/equipment/exit.php')) {
-                window.location.href = 'exit.php';
-            } else if (document.referrer) {
-                // If there's a referrer, go back
-                history.back();
             } else {
-                // Default fallback to exit module
+                // For all other cases (including coming from confirm page), go to exit list
                 window.location.href = 'exit.php';
             }
         }
@@ -496,11 +491,43 @@ if (empty($exit_doc_number)) {
             <!-- SIGNATURES -->
             <div class="signatures-area">
                 <div class="sig-box">
-                    <div style="height: 20px;"></div>
+                    <!-- TALLER Signature -->
+                    
+                    <?php 
+                        $deliveredBy = $clientData['delivered_by'] ?? 'Taller Mastertec';
+                        
+                        // SNAPSHOT LOGIC
+                        $sigPath = $clientData['exit_signature_path'] ?? null;
+                        
+                        // Fetch role (and signature fallback)
+                        $stmtSig = $pdo->prepare("SELECT u.signature_path, r.name as role_name 
+                                                  FROM users u 
+                                                  LEFT JOIN roles r ON u.role_id = r.id 
+                                                  WHERE u.username = ?");
+                        $stmtSig->execute([$deliveredBy]);
+                        $userData = $stmtSig->fetch();
+                        
+                        // If no snapshot, use current
+                        if (!$sigPath) {
+                            $sigPath = $userData['signature_path'] ?? null;
+                        }
+                        
+                        $roleName = $userData['role_name'] ?? 'Taller';
+                        
+                        if ($sigPath && file_exists('../../assets/uploads/signatures/' . $sigPath)):
+                    ?>
+                        <div style="height: 40px; display: flex; align-items: flex-end; justify-content: center; margin-bottom: -15px; position: relative; z-index: 1; top: 15px;">
+                             <img src="../../assets/uploads/signatures/<?php echo $sigPath; ?>" style="max-height: 50px; max-width: 150px;">
+                        </div>
+                    <?php else: ?>
+                         <div style="height: 25px;"></div>
+                    <?php endif; ?>
+
                     <div class="sig-line"></div>
+
                     <div style="font-weight: bold; margin-top: 5px; margin-bottom: 5px;">Entrega Conforme</div>
-                    <div style="font-size: 10px;"><?php echo htmlspecialchars($clientData['delivered_by'] ?? 'Taller Mastertec'); ?></div>
-                    <div style="font-size: 10px; font-weight: bold;">Taller</div>
+                    <div style="font-size: 10px;"><?php echo htmlspecialchars($deliveredBy); ?></div>
+                    <div style="font-size: 10px; font-weight: bold;"><?php echo htmlspecialchars($roleName); ?></div>
                 </div>
                 
                  <div class="sig-box">

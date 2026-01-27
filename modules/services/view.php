@@ -91,6 +91,12 @@ if (!$order) {
     die("Orden no encontrada.");
 }
 
+// Redirect if it is a warranty
+if ($order['service_type'] === 'warranty') {
+    header("Location: ../warranties/view.php?id=" . $order['id']);
+    exit;
+}
+
 // Fetch History
 $stmtHist = $pdo->prepare("
     SELECT h.*, u.username as user_name 

@@ -42,6 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <title>Login - System Taller</title>
     <!-- Phosphor Icons -->
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <link rel="icon" type="image/png" href="../../assets/favicon.png">
     <link rel="stylesheet" href="../../assets/css/style.css">
     <style>
         body {

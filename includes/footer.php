@@ -1,4 +1,5 @@
 </main> <!-- End main-content -->
+</div> <!-- End scroll-wrapper -->
 </div> <!-- End wrapper -->
 
 <script>
