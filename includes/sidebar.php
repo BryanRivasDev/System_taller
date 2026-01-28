@@ -3,23 +3,19 @@
 ?>
 <header class="navbar">
     <!-- Brand -->
-    <div class="navbar-brand">
+    <a href="/System_Taller/modules/dashboard/index.php" class="navbar-brand" style="text-decoration: none; color: inherit;">
         <div class="brand-logo-small">
             <i class="ph-bold ph-wrench"></i>
         </div>
         <div>
             <h3 style="margin:0; font-size: 1.1rem;">System<span style="color: var(--primary-500);">Taller</span></h3>
         </div>
-    </div>
+    </a>
     
 
     <!-- Menu -->
     <nav class="navbar-menu">
-        <?php if(can_access_module('dashboard', $pdo)): ?>
-        <a href="/System_Taller/modules/dashboard/index.php" class="nav-link <?php echo strpos($_SERVER['REQUEST_URI'], 'dashboard') !== false ? 'active' : ''; ?>">
-            <i class="ph ph-squares-four"></i> Dashboard
-        </a>
-        <?php endif; ?>
+
         
         <?php if(can_access_module('clients', $pdo)): ?>
         <a href="/System_Taller/modules/clients/index.php" class="nav-link <?php echo strpos($_SERVER['REQUEST_URI'], 'clients') !== false ? 'active' : ''; ?>">

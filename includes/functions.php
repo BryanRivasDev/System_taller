@@ -23,8 +23,25 @@ function has_permission($permission_code, $pdo) {
         return true;
     }
 
-    // Since we don't query on every call, we load permissions at login.
-    // However, if we need strict realtime checking, we would query here.
+    // 3. Real-time DB Check (Fallback if not in session)
+    // This ensures that if a permission was just added, it works immediately without re-login.
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM role_permissions rp 
+        JOIN permissions p ON rp.permission_id = p.id 
+        WHERE rp.role_id = ? AND p.code = ?
+    ");
+    $stmt->execute([$_SESSION['role_id'], $permission_code]);
+    
+    if ($stmt->fetchColumn() > 0) {
+        // Optional: Update session cache to avoid future DB calls for this request/session
+        if (!isset($_SESSION['permissions'])) $_SESSION['permissions'] = [];
+        if (!in_array($permission_code, $_SESSION['permissions'])) {
+            $_SESSION['permissions'][] = $permission_code;
+        }
+        return true;
+    }
+
     return false;
 }
 

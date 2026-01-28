@@ -753,6 +753,7 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                     });
                                 </script>
                             <?php endif; ?>
+
                         <?php else: ?>
                             <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 12px; padding: 1rem; margin-bottom: 1.5rem; display: flex; align-items: center; gap: 1rem;">
                                 <i class="ph ph-check-circle" style="font-size: 1.5rem; color: #34d399;"></i>
@@ -761,6 +762,41 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                     <span style="font-size: 0.85rem; color: var(--p-text-muted);">Proceso finalizado.</span>
                                 </div>
                             </div>
+                            
+                            <?php if (has_permission('module_re_enter_workshop', $pdo)): ?>
+                                <div class="update-card" style="margin-bottom: 1.5rem; border-top: 4px solid var(--p-primary);">
+                                    <h3 style="margin-top: 0; margin-bottom: 1rem; font-size: 1.1rem; color: var(--p-text-main);">
+                                        <i class="ph ph-arrow-u-down-left"></i> Reingresar a Taller
+                                    </h3>
+                                    <p style="font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 1rem;">
+                                        Tiene permisos para reabrir este caso. Seleccione el estado al que desea regresar.
+                                    </p>
+                                    <form method="POST">
+                                        <input type="hidden" name="action" value="update_status">
+                                        
+                                        <div style="margin-bottom: 1rem;">
+                                            <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Nuevo Estado</label>
+                                            <select name="status" class="modern-select">
+                                                <option value="received">Recibido (Inicial)</option>
+                                                <option value="diagnosing">En Diagnóstico</option>
+                                                <option value="pending_approval">En Espera</option>
+                                                <option value="in_repair">En Reparación</option>
+                                                <option value="ready">Listo</option>
+                                            </select>
+                                        </div>
+
+                                        <div style="margin-bottom: 1rem;">
+                                            <label style="display: block; font-size: 0.85rem; color: var(--p-text-muted); margin-bottom: 0.5rem;">Motivo de Reingreso</label>
+                                            <textarea name="note" class="modern-textarea" rows="2" placeholder="Ej. Cliente reporta falla recurrente..." required></textarea>
+                                        </div>
+
+                                        <button type="submit" class="btn-update">
+                                            Confirmar Reingreso
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
+                            
                         <?php endif; ?>
 
                     <?php endif; ?>

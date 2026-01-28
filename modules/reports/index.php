@@ -96,6 +96,11 @@ require_once '../../includes/sidebar.php';
             </select>
             <i class="ph ph-caret-down select-caret"></i>
         </div>
+
+        <button onclick="exportToExcel()" class="premium-btn-primary" style="display: flex; align-items: center; justify-content: center; gap: 0.5rem; white-space: nowrap;">
+            <i class="ph ph-microsoft-excel-logo" style="font-size: 1.2rem;"></i>
+            <span>Exportar Excel</span>
+        </button>
     </div>
 
     <!-- Table -->
@@ -236,8 +241,8 @@ require_once '../../includes/sidebar.php';
 /* PREMIUM UI SYSTEM */
 .premium-filter-bar {
     display: grid;
-    grid-template-columns: 1fr 240px 240px;
-    gap: 1.5rem;
+    grid-template-columns: 1fr 200px 200px 180px;
+    gap: 1rem;
     background: rgba(var(--bg-card-rgb), 0.4);
     backdrop-filter: blur(10px);
     border: 1px solid var(--border-color);
@@ -757,6 +762,44 @@ document.addEventListener('click', function(e) {
         });
     }
 });
+// Export to Excel Function
+function exportToExcel() {
+    const search = document.getElementById('searchInput').value;
+    const status = document.getElementById('statusFilter').value;
+    const type = document.getElementById('typeFilter').value;
+    
+    // Construct URL with parameters
+    const params = new URLSearchParams({
+        search: search,
+        status: status,
+        type: type
+    });
+    
+    // Redirect to export script to trigger download
+    window.location.href = 'export.php?' + params.toString();
+}
 </script>
+
+<style>
+/* New Button Style if not already present */
+.premium-btn-primary {
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 12px;
+    padding: 0 1.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 12px rgba(var(--primary-rgb), 0.3);
+}
+
+.premium-btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 16px rgba(var(--primary-rgb), 0.4);
+    background: var(--primary-600);
+}
+</style>
 
 <?php require_once '../../includes/footer.php'; ?>

@@ -39,6 +39,7 @@ $defined_modules = [
     'settings_modules' => 'Control de Módulos',
     'settings_users'   => 'Gestión de Usuarios (Admin)',
     'settings_restore' => 'Restaurar Sistema',
+    're_enter_workshop' => 'Reingresar a Taller',
 ];
 
 foreach ($defined_modules as $key => $desc) {
@@ -92,6 +93,66 @@ if (isset($_GET['success'])) {
 $active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'general'; // Default to general
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $action = $_POST['action'] ?? '';
+
+    // --- BACKUP DATABASE ---
+    if ($action === 'backup_db') {
+        if (!can_access_module('settings_restore', $pdo) && !can_access_module('settings', $pdo)) {
+            die("Acceso denegado.");
+        }
+
+        $filename = 'system_taller_backup_' . date('Y-m-d_H-i-s') . '.sql';
+        $dumpPath = tempnam(sys_get_temp_dir(), 'sql_dump');
+        
+        // Command for XAMPP Windows Default
+        $command = 'C:\xampp\mysql\bin\mysqldump --user=root --host=localhost system_taller > "' . $dumpPath . '"';
+        
+        // Execute
+        system($command, $returnVar);
+
+        if ($returnVar === 0 && file_exists($dumpPath)) {
+            header('Content-Description: File Transfer');
+            header('Content-Type: application/octet-stream');
+            header('Content-Disposition: attachment; filename="' . $filename . '"');
+            header('Expires: 0');
+            header('Cache-Control: must-revalidate');
+            header('Pragma: public');
+            header('Content-Length: ' . filesize($dumpPath));
+            readfile($dumpPath);
+            unlink($dumpPath);
+            exit;
+        } else {
+            header("Location: index.php?tab=restore&error=backup_failed");
+            exit;
+        }
+    }
+
+    // --- RESTORE DATABASE ---
+    if ($action === 'restore_db') {
+         if (!can_access_module('settings_restore', $pdo) && !can_access_module('settings', $pdo)) {
+            die("Acceso denegado.");
+        }
+
+        if (isset($_FILES['backup_file']) && $_FILES['backup_file']['error'] == 0) {
+            $tmpName = $_FILES['backup_file']['tmp_name'];
+            
+            // Command for XAMPP Windows Default (Import)
+            $command = 'C:\xampp\mysql\bin\mysql --user=root --host=localhost system_taller < "' . $tmpName . '"';
+            
+            system($command, $returnVar);
+
+            if ($returnVar === 0) {
+                 header("Location: index.php?tab=restore&msg=restored");
+                 exit;
+            } else {
+                 header("Location: index.php?tab=restore&error=restore_failed");
+                 exit;
+            }
+        } else {
+             header("Location: index.php?tab=restore&error=upload_error");
+             exit;
+        }
+    }
     
     // --- UPDATE GENERAL SETTINGS (LOGO) ---
     if (isset($_POST['action']) && $_POST['action'] === 'update_general_settings') {
@@ -673,7 +734,8 @@ require_once '../../includes/sidebar.php';
             'settings_roles'   => ['label' => 'Roles', 'cat' => 'Administración', 'icon' => 'ph-shield-check'],
             'settings_modules' => ['label' => 'Módulos', 'cat' => 'Administración', 'icon' => 'ph-squares-four'],
             'settings_users'   => ['label' => 'Usuarios (Admin)', 'cat' => 'Administración', 'icon' => 'ph-users-three'],
-            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon']
+            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon'],
+            're_enter_workshop' => ['label' => 'Reingresar', 'cat' => 'Gestión', 'icon' => 'ph-arrow-u-down-left']
         ];
 
         // Group by Category
@@ -782,7 +844,9 @@ require_once '../../includes/sidebar.php';
             'settings_roles'   => ['label' => 'Roles', 'cat' => 'Administración', 'icon' => 'ph-shield-check'],
             'settings_modules' => ['label' => 'Módulos', 'cat' => 'Administración', 'icon' => 'ph-squares-four'],
             'settings_users'   => ['label' => 'Usuarios (Admin)', 'cat' => 'Administración', 'icon' => 'ph-users-three'],
-            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon']
+            'settings_users'   => ['label' => 'Usuarios (Admin)', 'cat' => 'Administración', 'icon' => 'ph-users-three'],
+            'settings_restore' => ['label' => 'Restaurar', 'cat' => 'Administración', 'icon' => 'ph-warning-octagon'],
+            're_enter_workshop' => ['label' => 'Reingresar', 'cat' => 'Gestión', 'icon' => 'ph-arrow-u-down-left']
         ];
         
         // Group by Category (Reused Logic)
@@ -1186,43 +1250,91 @@ document.addEventListener('DOMContentLoaded', function() {
     <!-- TAB: RESTORE -->
     <div id="tab-restore" style="display: <?php echo $active_tab == 'restore' ? 'block' : 'none'; ?>;">
         <?php if (!can_access_module('settings_restore', $pdo) && !can_access_module('settings', $pdo)): ?>
-             <div class="card"><div class="text-center p-4">Acceso denegado a Restaurar Sistema.</div></div>
+                <div class="card"><div class="text-center p-4">Acceso denegado a Restaurar Sistema.</div></div>
         <?php else: ?>
-        <div class="card" style="border: 1px solid var(--danger); max-width: 700px;">
-            <div style="display: flex; gap: 1.5rem; align-items: flex-start;">
-                <div style="background: rgba(239, 68, 68, 0.1); padding: 1rem; border-radius: 12px; color: var(--danger);">
-                    <i class="ph ph-warning-octagon" style="font-size: 2rem;"></i>
-                </div>
-                <div>
-                    <h3 style="color: var(--danger);">Zona de Peligro: Restaurar de Fábrica</h3>
-                    <p class="text-muted" style="margin-bottom: 1rem;">
-                        Esta acción <strong>ELIMINARÁ PERMANENTEMENTE</strong> todos los datos operativos del sistema, incluyendo:
-                    </p>
-                    <ul style="color: var(--text-secondary); margin-bottom: 1.5rem; padding-left: 1.5rem;">
-                        <li>Todos los clientes y sus datos.</li>
-                        <li>Todos los equipos registrados.</li>
-                        <li>Todas las órdenes de servicio y garantías.</li>
-                        <li>El historial completo de reparaciones.</li>
-                        <li>Préstamos de herramientas y registros de auditoría.</li>
-                    </ul>
-                    <p style="margin-bottom: 1.5rem;">
-                        <strong>Nota:</strong> Los Usuarios, Roles y Configuraciones de Módulos NO serán eliminados.
-                    </p>
+        
+        <!-- Success/Error Messages -->
+        <?php if(isset($_GET['msg']) && $_GET['msg']=='restored'): ?>
+            <div class="alert alert-success" style="margin-bottom: 1.5rem; background: rgba(34, 197, 94, 0.1); color: var(--success); border: 1px solid var(--success);">
+                <i class="ph ph-check-circle"></i> Base de datos restaurada correctamente.
+            </div>
+        <?php endif; ?>
+        <?php if(isset($_GET['error'])): ?>
+            <div class="alert alert-danger" style="margin-bottom: 1.5rem; background: rgba(239, 68, 68, 0.1); color: var(--danger); border: 1px solid var(--danger);">
+                <i class="ph ph-warning"></i> Error en la operación: <?php echo htmlspecialchars($_GET['error']); ?>
+            </div>
+        <?php endif; ?>
 
-                    <form method="POST" onsubmit="return confirm('¿ESTÁS SEGURO? Esta acción es irreversible.');">
-                        <input type="hidden" name="action" value="system_restore">
-                        
-                        <div class="form-group" style="max-width: 400px; margin-bottom: 1.5rem;">
-                            <label class="form-label">Contraseña de SuperAdmin (para confirmar)</label>
-                            <input type="password" name="admin_password" class="form-control" placeholder="Ingresa tu contraseña actual" required>
-                        </div>
-                        
-                        <button type="submit" class="btn btn-danger" style="background-color: var(--danger); color: white;">
-                            <i class="ph ph-trash"></i> Confirmar y Eliminar Todo
-                        </button>
-                    </form>
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.5rem; align-items: stretch;">
+            
+            <!-- BACKUP SECTION -->
+            <div class="card" style="margin-bottom: 0; border-left: 4px solid var(--primary-500); height: 100%; display: flex; flex-direction: column;">
+                <div style="display: flex; gap: 1rem; align-items: flex-start; flex: 1;">
+                    <div style="background: rgba(var(--primary-rgb), 0.1); padding: 0.75rem; border-radius: 10px; color: var(--primary-500); flex-shrink: 0;">
+                        <i class="ph ph-database" style="font-size: 1.5rem;"></i>
+                    </div>
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; height: 100%;">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Respaldo de BD</h3>
+                        <p class="text-muted" style="margin-bottom: auto; font-size: 0.9rem; line-height: 1.5;">
+                            Descarga una copia SQL de seguridad.
+                        </p>
+                        <form method="POST" style="margin-top: 1rem;">
+                            <input type="hidden" name="action" value="backup_db">
+                            <button type="submit" class="btn btn-primary" style="width: 100%;">
+                                <i class="ph ph-download-simple"></i> Descargar (.sql)
+                            </button>
+                        </form>
+                    </div>
                 </div>
             </div>
+
+            <!-- RESTORE SECTION -->
+            <div class="card" style="margin-bottom: 0; border-left: 4px solid var(--warning); height: 100%; display: flex; flex-direction: column;">
+                <div style="display: flex; gap: 1rem; align-items: flex-start; flex: 1;">
+                    <div style="background: rgba(234, 179, 8, 0.1); padding: 0.75rem; border-radius: 10px; color: var(--warning); flex-shrink: 0;">
+                        <i class="ph ph-upload-simple" style="font-size: 1.5rem;"></i>
+                    </div>
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; height: 100%;">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem;">Restaurar BD</h3>
+                        <p class="text-muted" style="margin-bottom: auto; font-size: 0.9rem; line-height: 1.5;">
+                            Importar archivo .sql (Sobrescribe datos)
+                        </p>
+                        <form method="POST" enctype="multipart/form-data" onsubmit="return confirm('¿Estás seguro? Se sobrescribirá TODA la base de datos actual.');" style="margin-top: 1rem;">
+                            <input type="hidden" name="action" value="restore_db">
+                            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                                <input type="file" name="backup_file" class="form-control" accept=".sql" required style="font-size: 0.85rem; padding: 0.4rem; width: 100%;">
+                                <button type="submit" class="btn btn-secondary" style="width: 100%;">
+                                    <i class="ph ph-arrow-counter-clockwise"></i> Restaurar
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DANGER ZONE (Factory Reset) -->
+            <div class="card" style="margin-bottom: 0; border: 1px solid var(--danger); height: 100%; display: flex; flex-direction: column;">
+                <div style="display: flex; gap: 1rem; align-items: flex-start; flex: 1;">
+                    <div style="background: rgba(239, 68, 68, 0.1); padding: 0.75rem; border-radius: 10px; color: var(--danger); flex-shrink: 0;">
+                        <i class="ph ph-warning-octagon" style="font-size: 1.5rem;"></i>
+                    </div>
+                    <div style="flex-grow: 1; display: flex; flex-direction: column; height: 100%;">
+                        <h3 style="font-size: 1.1rem; margin-bottom: 0.5rem; color: var(--danger);">Reset de Fábrica</h3>
+                        <p class="text-muted" style="margin-bottom: auto; font-size: 0.9rem; line-height: 1.5;">
+                            Elimina clientes, equipos y órdenes.
+                        </p>
+                        
+                        <form method="POST" onsubmit="return confirm('¿ESTÁS SEGURO? Esta acción es irreversible.');" style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem;">
+                            <input type="hidden" name="action" value="system_restore">
+                            <input type="password" name="admin_password" class="form-control" placeholder="Pass de SuperAdmin" required style="font-size: 0.85rem; padding: 0.4rem; width: 100%;">
+                            <button type="submit" class="btn btn-danger" style="background-color: var(--danger); color: white; width: 100%;">
+                                <i class="ph ph-trash"></i> Eliminar Todo
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+
         </div>
         <?php endif; ?>
     </div>

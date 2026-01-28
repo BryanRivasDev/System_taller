@@ -38,57 +38,57 @@ $recentType = 'services'; // 'services' or 'tools'
 
 // --- DATA FETCHING LOGIC ---
 
+// --- DATA FETCHING LOGIC ---
+
 if ($is_tech) {
     // --- TECHNICIAN VIEW ---
-    
-    // KPI 1: My Assignments
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status NOT IN ('delivered', 'cancelled') AND service_type = 'service'");
+    // KPI 1: Equipos Asignados (Active orders assigned to tech)
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status NOT IN ('delivered', 'cancelled')");
     $stmt->execute([$user_id]);
     $kpi1_val = $stmt->fetchColumn();
-    $kpi1_label = "Mis Asignaciones";
+    $kpi1_label = "Equipos Asignados";
     $kpi1_icon = "ph-user-focus";
     $kpi1_color = "var(--primary-500)";
     $kpi1_bg = "rgba(99, 102, 241, 0.1)";
 
-    // KPI 2: Diagnosing
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status = 'diagnosing'");
-    $stmt->execute([$user_id]);
+    // KPI 2: Equipos en Taller (Global Active Orders context)
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status NOT IN ('delivered', 'cancelled')");
     $kpi2_val = $stmt->fetchColumn();
-    $kpi2_label = "En Diagnóstico";
-    $kpi2_icon = "ph-stethoscope";
+    $kpi2_label = "Equipos en Taller";
+    $kpi2_icon = "ph-warehouse";
     $kpi2_color = "var(--warning)";
     $kpi2_bg = "rgba(234, 179, 8, 0.1)";
 
-    // KPI 3: In Repair
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status = 'in_repair'");
+    // KPI 3: Total Entregados (By this tech)
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status = 'delivered'");
     $stmt->execute([$user_id]);
     $kpi3_val = $stmt->fetchColumn();
-    $kpi3_label = "En Reparación";
-    $kpi3_icon = "ph-wrench";
-    $kpi3_color = "var(--purple-500)";
-    $kpi3_bg = "rgba(168, 85, 247, 0.1)";
+    $kpi3_label = "Total Entregados";
+    $kpi3_icon = "ph-check-circle";
+    $kpi3_color = "var(--success)";
+    $kpi3_bg = "rgba(34, 197, 94, 0.1)";
 
-    // KPI 4: Completed This Month
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE assigned_tech_id = ? AND status IN ('ready', 'delivered') AND DATE_FORMAT(entry_date, '%Y-%m') = ?");
-    $stmt->execute([$user_id, date('Y-m')]);
-    $kpi4_val = $stmt->fetchColumn();
-    $kpi4_label = "Finalizados (Mes)";
-    $kpi4_icon = "ph-check-square-offset";
-    $kpi4_color = "var(--success)";
-    $kpi4_bg = "rgba(34, 197, 94, 0.1)";
+    // KPI 4: Hidden/Empty or Optional
+    $kpi4_val = 0; 
+    $kpi4_label = ""; 
+    $kpi4_icon = ""; 
+    $kpi4_color = "transparent"; 
+    $kpi4_bg = "transparent";
 
-    // Chart: My Status Distribution
+    // Chart: My Status Distribution (Status of assigned orders)
     $stmt = $pdo->prepare("SELECT status, COUNT(*) as count FROM service_orders WHERE assigned_tech_id = ? AND status NOT IN ('delivered', 'cancelled') GROUP BY status");
     $stmt->execute([$user_id]);
     $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
     
     // Recent Activity: My Orders
     $recentSql = "
-        SELECT so.id, so.entry_date, so.status, c.name as client_name, e.brand, e.model
+        SELECT so.id, so.entry_date, so.status, so.service_type, c.name as client_name, e.brand, e.model
         FROM service_orders so
-        JOIN clients c ON so.client_id = c.id
-        JOIN equipments e ON so.equipment_id = e.id
-        WHERE so.assigned_tech_id = ? AND so.service_type = 'service'
+        LEFT JOIN clients c ON so.client_id = c.id
+        LEFT JOIN equipments e ON so.equipment_id = e.id
+        LEFT JOIN warranties w ON so.id = w.service_order_id
+        WHERE so.assigned_tech_id = ? 
+        AND ((so.service_type = 'service') OR (so.service_type = 'warranty' AND (w.product_code IS NULL OR w.product_code = '')))
         ORDER BY so.entry_date DESC LIMIT 5
     ";
     $stmt = $pdo->prepare($recentSql);
@@ -96,213 +96,144 @@ if ($is_tech) {
     $recentItems = $stmt->fetchAll();
 
 } elseif ($is_reception) {
+    // ... (Reception logic unchanged for query part if already correct, but ensuring consistency)
+    // KPI 1...
+    // ...
+    // ... (Skipping unchanged KPI blocks for brevity in replace tool if possible, but simpler to just target the diff areas or specific blocks)
+    // Actually, I should target the Table HTML instead for the column addition, and the Tech Query separately if needed.
+    // But since I can do a large block replace or multiple calls.
+    // Let's do multiple small replaces for safety.
+    // 1. Tech Query Update is implemented here.
+    // 2. We will handle Table HTML in next call if this is too complex.
+    // Wait, the ReplacementContent must be the *new* content. 
+    // I will just update the query here in this block.
+    // And I will also update the Table HTML further down in the same file.
+    // Since they are far apart, I should use MULTI_REPLACE or separate calls. 
+    // I will use replace_file_content for the Table and another for the Query? 
+    // No, I'll use multi_replace.
+    
+    // Oh, I am restricted to replace_file_content or multi_replace.
+    // Let's use multi_replace.
+
+
+} elseif ($is_reception) {
     // --- RECEPTION VIEW ---
 
-    // KPI 1: Received Today
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE DATE(entry_date) = CURDATE() AND service_type = 'service'");
-    $stmt->execute();
+    // KPI 1: Servicios en Taller (Active Services)
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE service_type = 'service' AND status NOT IN ('delivered', 'cancelled')");
     $kpi1_val = $stmt->fetchColumn();
-    $kpi1_label = "Recibidos Hoy";
-    $kpi1_icon = "ph-box-arrow-down";
-    $kpi1_color = "var(--primary-500)";
-    $kpi1_bg = "rgba(99, 102, 241, 0.1)";
-
-    // KPI 2: Ready for Pickup (To Call)
-    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'ready'");
-    $kpi2_val = $stmt->fetchColumn();
-    $kpi2_label = "Listos para Entrega";
-    $kpi2_icon = "ph-phone-outgoing";
-    $kpi2_color = "var(--success)";
-    $kpi2_bg = "rgba(34, 197, 94, 0.1)";
-
-    // KPI 3: Pending Approval (To Call)
-    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'pending_approval'");
-    $kpi3_val = $stmt->fetchColumn();
-    $kpi3_label = "Por Aprobar";
-    $kpi3_icon = "ph-clock-alert";
-    $kpi3_color = "var(--warning)";
-    $kpi3_bg = "rgba(234, 179, 8, 0.1)";
-
-    // KPI 4: Active Warranties
-    $stmt = $pdo->query("SELECT COUNT(*) FROM warranties WHERE status = 'active'");
-    $kpi4_val = $stmt->fetchColumn();
-    $kpi4_label = "Garantías Activas";
-    $kpi4_icon = "ph-shield-warning";
-    $kpi4_color = "var(--danger)";
-    $kpi4_bg = "rgba(239, 68, 68, 0.1)";
-
-    // Chart: Global Status (Reception monitors flow)
-    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') GROUP BY status");
-    $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-    // Recent Activity: All Orders
-    $stmt = $pdo->query("
-        SELECT so.id, so.entry_date, so.status, c.name as client_name, e.brand, e.model
-        FROM service_orders so
-        JOIN clients c ON so.client_id = c.id
-        JOIN equipments e ON so.equipment_id = e.id
-        WHERE so.service_type = 'service'
-        ORDER BY so.entry_date DESC LIMIT 5
-    ");
-    $recentItems = $stmt->fetchAll();
-
-} elseif ($is_warehouse) {
-    // --- WAREHOUSE VIEW ---
-    $recentType = 'tools';
-
-    // Check if tool_assignments table exists or similar
-    // Assuming table 'tool_assignments' for loans based on 'tools' module inspection
-    
-    // KPI 1: Total Tools
-    $stmt = $pdo->query("SELECT SUM(quantity) FROM tools"); // Or COUNT(*) for types? Let's use COUNT(*) types
-    $kpi1_val = $pdo->query("SELECT COUNT(*) FROM tools")->fetchColumn();
-    $kpi1_label = "Tipos de Herramientas";
-    $kpi1_icon = "ph-toolbox";
-    $kpi1_color = "var(--primary-500)";
-    $kpi1_bg = "rgba(99, 102, 241, 0.1)";
-
-    // KPI 2: Active Loans
-    // We need to check if tool_assignments exists, handle error if not
-    try {
-        $kpi2_val = $pdo->query("SELECT COUNT(*) FROM tool_assignments WHERE status = 'active'")->fetchColumn();
-    } catch (Exception $e) { $kpi2_val = 0; }
-    $kpi2_label = "Préstamos Activos";
-    $kpi2_icon = "ph-hand-giving";
-    $kpi2_color = "var(--warning)";
-    $kpi2_bg = "rgba(234, 179, 8, 0.1)";
-
-    // KPI 3: Low Stock? Or Maintenance
-    try {
-        $kpi3_val = $pdo->query("SELECT COUNT(*) FROM tools WHERE status = 'maintenance'")->fetchColumn();
-    } catch (Exception $e) { $kpi3_val = 0; }
-    $kpi3_label = "En Mantenimiento";
-    $kpi3_icon = "ph-wrench";
-    $kpi3_color = "var(--danger)";
-    $kpi3_bg = "rgba(239, 68, 68, 0.1)";
-    
-    // KPI 4: Total Products? If no products table, maybe Total Inventory Value or placeholder
-    // Using Total Items (SUM quantity)
-    $kpi4_val = (int)$pdo->query("SELECT SUM(quantity) FROM tools")->fetchColumn();
-    $kpi4_label = "Stock Total (Unds)";
-    $kpi4_icon = "ph-stack";
-    $kpi4_color = "var(--success)";
-    $kpi4_bg = "rgba(34, 197, 94, 0.1)";
-
-    // Chart: Tool Status Distribution
-    // Available vs Assigned vs Maintenance
-    // We need to calculate 'Assigned' numbers if not stored in 'tools' status column
-    // tools might have status column? Step 696 showed 'status' column in table headers.
-    // Values: 'available', 'assigned', 'maintenance', 'lost'
-    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM tools GROUP BY status");
-    $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-    
-    // Translate Logic for Tools
-    /*
-        $statusLabels = [
-            'available' => 'Disponible',
-            'assigned' => 'Prestado',
-            'maintenance' => 'Mantenimiento',
-            'lost' => 'Perdido'
-        ];
-    */
-
-    // Recent Activity: Tool Loans
-    // Assume table tool_assignments
-    try {
-        $stmt = $pdo->query("
-            SELECT ta.id, ta.assigned_at as date, ta.status, t.name as item_name, u.username as user_name
-            FROM tool_assignments ta
-            JOIN tools t ON ta.tool_id = t.id
-            JOIN users u ON ta.user_id = u.id
-            ORDER BY ta.assigned_at DESC LIMIT 5
-        ");
-        $recentItems = $stmt->fetchAll();
-    } catch(Exception $e) {
-        $recentItems = [];
-    }
-
-} else {
-    // --- ADMIN / DEFAULT VIEW ---
-    
-    // KPI 1: Active Jobs (Total Breakdown)
-    $stmtSrv = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') AND service_type = 'service'");
-    $activeSrv = $stmtSrv->fetchColumn();
-    
-    // Match logic from warranties/index.php
-    $stmtWar = $pdo->query("SELECT COUNT(*) 
-                            FROM service_orders so 
-                            LEFT JOIN warranties w ON so.id = w.service_order_id 
-                            WHERE so.status NOT IN ('delivered', 'cancelled') 
-                            AND so.service_type = 'warranty' 
-                            AND (w.product_code IS NULL OR w.product_code = '')");
-    $activeWar = $stmtWar->fetchColumn();
-
-    $activeTotal = $activeSrv + $activeWar;
-
-    $kpi1_val = $activeTotal;
-    $kpi1_label = "Equipos en Taller <div style='font-size:0.75rem; font-weight:400; margin-top:4px; opacity:0.8; display:flex; align-items:center; gap:6px;'><span style='display:flex; align-items:center; gap:3px;'><i class='ph-bold ph-wrench'></i> $activeSrv</span> <span style='display:flex; align-items:center; gap:3px;'><i class='ph-bold ph-shield-check'></i> $activeWar</span></div>";
+    $kpi1_label = "Servicios en Taller";
     $kpi1_icon = "ph-wrench";
     $kpi1_color = "var(--primary-500)";
     $kpi1_bg = "rgba(99, 102, 241, 0.1)";
 
-    // KPI 2: Ready
-    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'ready'");
+    // KPI 2: Garantías en Taller (Active Repair Warranties)
+    // Filter for repair warranties (no product_code)
+    $stmt = $pdo->query("
+        SELECT COUNT(*) 
+        FROM service_orders so 
+        LEFT JOIN warranties w ON so.id = w.service_order_id 
+        WHERE so.service_type = 'warranty' 
+        AND (w.product_code IS NULL OR w.product_code = '')
+        AND so.status NOT IN ('delivered', 'cancelled')
+    ");
     $kpi2_val = $stmt->fetchColumn();
-    $kpi2_label = "Listos para Entrega";
-    $kpi2_icon = "ph-check-circle";
-    $kpi2_color = "var(--success)";
-    $kpi2_bg = "rgba(34, 197, 94, 0.1)";
+    $kpi2_label = "Garantías en Taller";
+    $kpi2_icon = "ph-shield-warning";
+    $kpi2_color = "var(--warning)";
+    $kpi2_bg = "rgba(234, 179, 8, 0.1)";
 
-    // KPI 3: Deliveries Month (Total Breakdown)
-    $currentMonth = date('Y-m');
-    
-    // Service Deliveries (Total History)
-    $stmtDelSrv = $pdo->prepare("SELECT COUNT(*) FROM service_orders WHERE status = 'delivered' AND service_type = 'service'");
-    $stmtDelSrv->execute();
-    $delSrv = $stmtDelSrv->fetchColumn();
-    
-    // Warranty Deliveries (Total History - Precise Logic)
-    $stmtDelWar = $pdo->prepare("SELECT COUNT(*) 
-                                 FROM service_orders so 
-                                 LEFT JOIN warranties w ON so.id = w.service_order_id 
-                                 WHERE so.status = 'delivered' 
-                                 AND so.service_type = 'warranty' 
-                                 AND (w.product_code IS NULL OR w.product_code = '')");
-    $stmtDelWar->execute();
-    $delWar = $stmtDelWar->fetchColumn();
-    
-    // Total displayed is Sum of visible lists
-    $delTotal = $delSrv + $delWar;
+    // KPI 3: Listos para Entrega
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'ready'");
+    $kpi3_val = $stmt->fetchColumn();
+    $kpi3_label = "Listos para Entrega";
+    $kpi3_icon = "ph-package";
+    $kpi3_color = "var(--success)";
+    $kpi3_bg = "rgba(34, 197, 94, 0.1)";
 
-    $kpi3_val = $delTotal;
-    $kpi3_label = "Total Entregados <div style='font-size:0.75rem; font-weight:400; margin-top:4px; opacity:0.8; display:flex; align-items:center; gap:6px;'><span style='display:flex; align-items:center; gap:3px;'><i class='ph-bold ph-wrench'></i> $delSrv</span> <span style='display:flex; align-items:center; gap:3px;'><i class='ph-bold ph-shield-check'></i> $delWar</span></div>";
-    $kpi3_icon = "ph-calendar-plus";
-    $kpi3_color = "var(--warning)";
-    $kpi3_bg = "rgba(234, 179, 8, 0.1)";
-
-    // KPI 4: Active Warranties
-    $stmt = $pdo->query("SELECT COUNT(*) FROM warranties WHERE status = 'active'");
+    // KPI 4: Total Entregados
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'delivered'");
     $kpi4_val = $stmt->fetchColumn();
-    $kpi4_label = "Garantías Activas";
-    $kpi4_icon = "ph-shield-check";
-    $kpi4_color = "var(--danger)";
-    $kpi4_bg = "rgba(239, 68, 68, 0.1)";
+    $kpi4_label = "Total Entregados";
+    $kpi4_icon = "ph-check-circle";
+    $kpi4_color = "var(--purple-500)";
+    $kpi4_bg = "rgba(168, 85, 247, 0.1)";
 
-    // Chart: Global Status
-    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') AND service_type = 'service' GROUP BY status");
+    // Chart 1: Repair Status (Global Distribution)
+    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') GROUP BY status");
     $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-    // Recent Activity: All Orders
+    // Recent Activity: Services + Warranties
     $stmt = $pdo->query("
-        SELECT so.id, so.entry_date, so.status, c.name as client_name, e.brand, e.model
+        SELECT so.id, so.entry_date, so.status, so.service_type, c.name as client_name, e.brand, e.model
         FROM service_orders so
-        JOIN clients c ON so.client_id = c.id
-        JOIN equipments e ON so.equipment_id = e.id
-        WHERE so.service_type = 'service'
+        LEFT JOIN clients c ON so.client_id = c.id
+        LEFT JOIN equipments e ON so.equipment_id = e.id
+        LEFT JOIN warranties w ON so.id = w.service_order_id
+        WHERE (so.service_type = 'service') OR (so.service_type = 'warranty' AND (w.product_code IS NULL OR w.product_code = ''))
+        ORDER BY so.entry_date DESC LIMIT 5
+    ");
+    $recentItems = $stmt->fetchAll();
+
+} else {
+    // --- ADMIN / SUPERADMIN VIEW ---
+
+    // KPI 1: Servicios en Taller (Active)
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE service_type = 'service' AND status NOT IN ('delivered', 'cancelled')");
+    $kpi1_val = $stmt->fetchColumn();
+    $kpi1_label = "Servicios en Taller";
+    $kpi1_icon = "ph-wrench";
+    $kpi1_color = "var(--primary-500)";
+    $kpi1_bg = "rgba(99, 102, 241, 0.1)";
+
+    // KPI 2: Garantías en Taller (Active Repair Warranties)
+    $stmt = $pdo->query("
+        SELECT COUNT(*) 
+        FROM service_orders so 
+        LEFT JOIN warranties w ON so.id = w.service_order_id 
+        WHERE so.service_type = 'warranty' 
+        AND (w.product_code IS NULL OR w.product_code = '')
+        AND so.status NOT IN ('delivered', 'cancelled')
+    ");
+    $kpi2_val = $stmt->fetchColumn();
+    $kpi2_label = "Garantías en Taller";
+    $kpi2_icon = "ph-shield-warning";
+    $kpi2_color = "var(--warning)";
+    $kpi2_bg = "rgba(234, 179, 8, 0.1)";
+
+    // KPI 3: Listos para Entrega
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'ready'");
+    $kpi3_val = $stmt->fetchColumn();
+    $kpi3_label = "Listos para Entrega";
+    $kpi3_icon = "ph-package";
+    $kpi3_color = "var(--success)";
+    $kpi3_bg = "rgba(34, 197, 94, 0.1)";
+
+    // KPI 4: Total Entregados
+    $stmt = $pdo->query("SELECT COUNT(*) FROM service_orders WHERE status = 'delivered'");
+    $kpi4_val = $stmt->fetchColumn();
+    $kpi4_label = "Total Entregados";
+    $kpi4_icon = "ph-check-circle";
+    $kpi4_color = "var(--purple-500)";
+    $kpi4_bg = "rgba(168, 85, 247, 0.1)";
+
+    // Chart 1: Repair Status (Global)
+    $stmt = $pdo->query("SELECT status, COUNT(*) as count FROM service_orders WHERE status NOT IN ('delivered', 'cancelled') GROUP BY status");
+    $statusData = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+    // Recent Activity: All
+    $stmt = $pdo->query("
+        SELECT so.id, so.entry_date, so.status, so.service_type, c.name as client_name, e.brand, e.model
+        FROM service_orders so
+        LEFT JOIN clients c ON so.client_id = c.id
+        LEFT JOIN equipments e ON so.equipment_id = e.id
+        LEFT JOIN warranties w ON so.id = w.service_order_id
+        WHERE (so.service_type = 'service') OR (so.service_type = 'warranty' AND (w.product_code IS NULL OR w.product_code = ''))
         ORDER BY so.entry_date DESC LIMIT 5
     ");
     $recentItems = $stmt->fetchAll();
 }
+
 
 // --- COMPILE CHART DATA (Universal Logic) ---
 
@@ -387,36 +318,75 @@ if (!$is_warehouse) {
         
         foreach($cards as $card): 
             list($val, $lbl, $icon, $col, $bg) = $card;
+            if (empty($lbl)) continue;
+
+            // Determine URL based on Label
+            $cardUrl = '#'; // Default
+            $isClickable = true;
+
+            switch ($lbl) {
+                case 'Servicios en Taller':
+                case 'Equipos en Taller': // Fallback
+                    $cardUrl = '../services/index.php?status=active'; // Assuming filter support or just index
+                    break;
+                case 'Garantías en Taller':
+                    $cardUrl = '../warranties/index.php';
+                    break;
+                case 'Listos para Entrega':
+                    $cardUrl = '../equipment/exit.php'; // Or delivery module
+                    break;
+                case 'Total Entregados':
+                    $cardUrl = '../history/index.php';
+                    break;
+                case 'Mis Asignaciones':
+                case 'Equipos Asignados':
+                    $cardUrl = '../services/index.php'; // Tech view
+                    break;
+                default:
+                    $isClickable = false;
+            }
         ?>
+        <?php if ($isClickable): ?>
+        <a href="<?php echo $cardUrl; ?>" class="card stat-card" style="text-decoration: none; color: inherit; display: block; transition: transform 0.2s;">
+        <?php else: ?>
         <div class="card stat-card">
-            <div>
+        <?php endif; ?>
+            <div style="height: 100%; display: flex; flex-direction: column; justify-content: center;">
                 <div class="stat-icon" style="background: <?php echo $bg; ?>; color: <?php echo $col; ?>;">
                     <i class="ph <?php echo $icon; ?>"></i>
                 </div>
-                <div class="stat-value"><?php echo $val; ?></div>
-                <div class="stat-label"><?php echo $lbl; ?></div>
+                <div class="stat-value" style="color: var(--text-main);"><?php echo $val; ?></div>
+                <div class="stat-label" style="color: var(--text-muted);"><?php echo $lbl; ?></div>
             </div>
+        <?php if ($isClickable): ?>
+        </a>
+        <?php else: ?>
         </div>
+        <?php endif; ?>
         <?php endforeach; ?>
     </div>
 
     <!-- CHARTS ROW -->
-    <?php if (!$is_warehouse): ?>
+    <!-- CHARTS ROW -->
+    <?php if ($is_warehouse): ?>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 2rem; margin-bottom: 2rem;">
-        <!-- Status Chart -->
+        <!-- Status Chart (Everyone sees this or similar) -->
         <div class="card" style="min-height: 400px;">
             <h3 class="mb-4">Estado de Reparaciones</h3>
             <div style="position: relative; height: 300px; width: 100%;">
                 <canvas id="statusChart"></canvas>
             </div>
         </div>
-        <!-- Weekly Chart -->
+        
+        <!-- Weekly Chart (Reception & Admin only) -->
+        <?php if ($is_reception || $is_admin): ?>
         <div class="card" style="min-height: 400px;">
             <h3 class="mb-4">Ingresos de la Semana</h3>
             <div style="position: relative; height: 300px; width: 100%;">
                 <canvas id="weeklyChart"></canvas>
             </div>
         </div>
+        <?php endif; ?>
     </div>
     <?php elseif ($is_warehouse): ?>
     <!-- Warehouse Charts Row (Single Chart?) -->
@@ -438,7 +408,7 @@ if (!$is_warehouse) {
         <div class="card">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h3 style="margin: 0;">
-                    <?php echo $recentType == 'tools' ? 'Últimos Préstamos' : 'Servicios Recientes'; ?>
+                    <?php echo $recentType == 'tools' ? 'Últimos Préstamos' : 'Actividad Reciente (Servicios y Garantías)'; ?>
                 </h3>
                 <a href="<?php echo $recentType == 'tools' ? '../tools/assignments.php' : '../services/index.php'; ?>" class="btn btn-sm btn-secondary">Ver Todo</a>
             </div>
@@ -453,6 +423,7 @@ if (!$is_warehouse) {
                                 <th style="padding: 0.75rem;">Herramienta</th>
                                 <th style="padding: 0.75rem;">Estado</th>
                             <?php else: ?>
+                                <th style="padding: 0.75rem;">Tipo</th>
                                 <th style="padding: 0.75rem;">Cliente</th>
                                 <th style="padding: 0.75rem;">Equipo</th>
                                 <th style="padding: 0.75rem;">Estado</th>
@@ -478,6 +449,13 @@ if (!$is_warehouse) {
                                         <span class="badge"><?php echo ucfirst($item['status']); ?></span>
                                     </td>
                                 <?php else: ?>
+                                    <td style="padding: 0.75rem;">
+                                        <?php if(isset($item['service_type']) && $item['service_type'] == 'warranty'): ?>
+                                            <span style="background: rgba(249, 115, 22, 0.1); color: #f97316; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">GARANTÍA</span>
+                                        <?php else: ?>
+                                            <span style="background: rgba(59, 130, 246, 0.1); color: #3b82f6; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 600;">SERVICIO</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td style="padding: 0.75rem;"><?php echo htmlspecialchars($item['client_name']); ?></td>
                                     <td style="padding: 0.75rem;">
                                         <span class="text-sm text-muted"><?php echo htmlspecialchars($item['brand'] . ' ' . $item['model']); ?></span>
@@ -486,13 +464,26 @@ if (!$is_warehouse) {
                                         <?php 
                                             $s = $item['status'];
                                             $col = 'gray'; // default
-                                            if ($s == 'received') $col = 'blue';
-                                            if ($s == 'diagnosing') $col = 'yellow';
-                                            if ($s == 'in_repair') $col = 'purple';
-                                            if ($s == 'ready') $col = 'green';
-                                            if ($s == 'delivered') $col = 'gray';
+                                            $label2 = $s; // default
+
+                                            $statusMapDA = [
+                                                'received' => ['Recibido', 'blue'],
+                                                'diagnosing' => ['Diagnóstico', 'yellow'],
+                                                'in_repair' => ['Reparación', 'purple'],
+                                                'ready' => ['Listo', 'green'],
+                                                'delivered' => ['Entregado', 'gray'],
+                                                'pending_approval' => ['En Espera', 'orange'],
+                                                'cancelled' => ['Cancelado', 'red']
+                                            ];
+
+                                            if (isset($statusMapDA[$s])) {
+                                                $label2 = $statusMapDA[$s][0];
+                                                $col = $statusMapDA[$s][1];
+                                            } else {
+                                                $label2 = ucfirst($s);
+                                            }
                                         ?>
-                                        <span class="status-badge status-<?php echo $col; ?>"><?php echo ucfirst($s); ?></span>
+                                        <span class="status-badge status-<?php echo $col; ?>"><?php echo strtoupper($label2); ?></span>
                                     </td>
                                     <td style="padding: 0.75rem;">
                                         <a href="../services/view.php?id=<?php echo $item['id']; ?>" class="btn-icon">
@@ -514,64 +505,79 @@ if (!$is_warehouse) {
             </div>
         </div>
 
-        <!-- Quick Actions -->
-        <div class="card">
-            <h3 class="mb-4">Accesos Rápidos</h3>
-            <div style="display: flex; flex-direction: column; gap: 1rem;">
-                
-                <?php if(!$is_tech && !$is_warehouse): ?>
-                <a href="../services/add.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
-                    <div style="background: rgba(99, 102, 241, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
-                        <i class="ph ph-plus" style="color: var(--primary-500);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600;">Nuevo Servicio</div>
-                        <div class="text-xs text-muted">Registrar entrada</div>
-                    </div>
-                </a>
-                <a href="../clients/add.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
-                     <div style="background: rgba(34, 197, 94, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
-                        <i class="ph ph-user-plus" style="color: var(--success);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600;">Nuevo Cliente</div>
-                        <div class="text-xs text-muted">Agregar cliente</div>
-                    </div>
-                </a>
-                <?php endif; ?>
-                
-                <?php if($is_warehouse): ?>
-                <a href="../tools/add.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
-                    <div style="background: rgba(99, 102, 241, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
-                        <i class="ph ph-plus" style="color: var(--primary-500);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600;">Nueva Herramienta</div>
-                        <div class="text-xs text-muted">Registrar item</div>
-                    </div>
-                </a>
-                <a href="../tools/assign.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
-                     <div style="background: rgba(234, 179, 8, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
-                        <i class="ph ph-hand-giving" style="color: var(--warning);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600;">Asignar / Prestar</div>
-                        <div class="text-xs text-muted">Registrar salida</div>
-                    </div>
-                </a>
-                <?php endif; ?>
+        <!-- Right Column Wrapper -->
+        <div style="display: flex; flex-direction: column; gap: 2rem;">
+            
+            <?php if ($is_tech || $is_admin || $is_reception): ?>
+            <!-- Status Chart (Tech, Admin, Reception) -->
+            <div class="card">
+                 <h3 class="mb-4">Estado de Reparaciones</h3>
+                 <div style="position: relative; height: 250px; width: 100%;">
+                    <canvas id="statusChart"></canvas>
+                 </div>
+            </div>
+            <?php endif; ?>
 
-                <?php if(!$is_warehouse): ?>
-                <a href="../services/index.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
-                     <div style="background: rgba(234, 179, 8, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
-                        <i class="ph ph-list-checks" style="color: var(--warning);"></i>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600;"><?php echo $is_tech ? 'Mis Asignaciones' : 'Lista de Servicios'; ?></div>
-                        <div class="text-xs text-muted">Ver órdenes</div>
-                    </div>
-                </a>
-                <?php endif; ?>
+            <?php if ($is_admin || $is_reception): ?>
+            <!-- Weekly Chart (Admin, Reception) -->
+            <div class="card">
+                 <h3 class="mb-4">Ingresos de la Semana</h3>
+                 <div style="position: relative; height: 250px; width: 100%;">
+                    <canvas id="weeklyChart"></canvas>
+                 </div>
+            </div>
+            <?php endif; ?>
+
+            <!-- Quick Actions -->
+            <div class="card">
+                <h3 class="mb-4">Accesos Rápidos</h3>
+                <div style="display: flex; flex-direction: column; gap: 1rem;">
+                    
+                    <?php if(!$is_tech && !$is_warehouse): ?>
+                    <a href="../clients/add.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
+                         <div style="background: rgba(34, 197, 94, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
+                            <i class="ph ph-user-plus" style="color: var(--success);"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Nuevo Cliente</div>
+                            <div class="text-xs text-muted">Agregar cliente</div>
+                        </div>
+                    </a>
+                    <?php endif; ?>
+                    
+                    <?php if($is_warehouse): ?>
+                    <a href="../tools/add.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
+                        <div style="background: rgba(99, 102, 241, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
+                            <i class="ph ph-plus" style="color: var(--primary-500);"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Nueva Herramienta</div>
+                            <div class="text-xs text-muted">Registrar item</div>
+                        </div>
+                    </a>
+                    <a href="../tools/assign.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
+                         <div style="background: rgba(234, 179, 8, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
+                            <i class="ph ph-hand-giving" style="color: var(--warning);"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Asignar / Prestar</div>
+                            <div class="text-xs text-muted">Registrar salida</div>
+                        </div>
+                    </a>
+                    <?php endif; ?>
+
+                    <?php if(!$is_warehouse && $is_tech): ?>
+                    <a href="../services/index.php" class="btn btn-secondary w-full" style="justify-content: flex-start; padding: 1rem;">
+                         <div style="background: rgba(234, 179, 8, 0.2); padding: 8px; border-radius: 8px; margin-right: 0.5rem;">
+                            <i class="ph ph-list-checks" style="color: var(--warning);"></i>
+                        </div>
+                        <div>
+                            <div style="font-weight: 600;">Mis Asignaciones</div>
+                            <div class="text-xs text-muted">Ver órdenes</div>
+                        </div>
+                    </a>
+                    <?php endif; ?>
+                </div>
             </div>
         </div>
     </div>
@@ -616,7 +622,7 @@ if (!$is_warehouse) {
         }
     });
 
-    <?php if(!$is_warehouse): ?>
+    <?php if(!$is_warehouse && ($is_reception || $is_admin)): ?>
     // Weekly Chart
     const ctxWeekly = document.getElementById('weeklyChart').getContext('2d');
     new Chart(ctxWeekly, {
@@ -624,7 +630,7 @@ if (!$is_warehouse) {
         data: {
             labels: <?php echo json_encode($weeklyLabels); ?>,
             datasets: [{
-                label: '<?php echo $is_tech ? "Asignaciones" : "Equipos Recibidos"; ?>',
+                label: 'Equipos Recibidos',
                 data: <?php echo json_encode($weeklyCounts); ?>,
                 backgroundColor: '#6366f1',
                 borderRadius: 4

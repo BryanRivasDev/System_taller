@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // RE-ENTRY LOGIC
     if (isset($_POST['action']) && $_POST['action'] === 'reentry') {
         // Permission Check
-        if (!can_access_module('equipment_reentry', $pdo)) {
+        if (!can_access_module('re_enter_workshop', $pdo)) {
             die("Acceso denegado.");
         }
 
@@ -121,7 +121,7 @@ require_once '../../includes/sidebar.php';
             <p class="text-muted">Confirma los detalles de la entrega del equipo.</p>
         </div>
         
-        <?php if(can_access_module('equipment_reentry', $pdo)): ?>
+        <?php if(can_access_module('re_enter_workshop', $pdo)): ?>
         <div>
             <button type="button" onclick="openReentryModal()" class="btn" style="background: rgba(245, 158, 11, 0.1); color: var(--warning); border: 1px solid var(--warning);">
                 <i class="ph ph-arrow-u-up-left"></i> Reingresar al Taller

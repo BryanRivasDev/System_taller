@@ -45,12 +45,16 @@ require_once '../../includes/sidebar.php';
     </div>
 
     <!-- History Table -->
-    <div class="card">
         <div style="padding: 1rem; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
             <h3 style="margin: 0; font-size: 1.1rem; color: var(--text-primary);">Entregas Realizadas</h3>
-            <div class="input-group" style="width: 300px;">
-                 <input type="text" id="searchInput" class="form-control" placeholder="Buscar por cliente, equipo, serie...">
-                 <i class="ph ph-magnifying-glass input-icon"></i>
+            <div style="display: flex; gap: 1rem;">
+                <div class="input-group" style="width: 300px;">
+                     <input type="text" id="searchInput" class="form-control" placeholder="Buscar por cliente, equipo, serie...">
+                     <i class="ph ph-magnifying-glass input-icon"></i>
+                </div>
+                <button onclick="exportToExcel()" class="btn btn-primary" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <i class="ph ph-microsoft-excel-logo"></i> Exportar
+                </button>
             </div>
         </div>
         <div class="table-container">
@@ -155,6 +159,12 @@ require_once '../../includes/sidebar.php';
 </style>
 
 <script>
+// Export Function
+function exportToExcel() {
+    const search = document.getElementById('searchInput').value;
+    window.location.href = 'export.php?search=' + encodeURIComponent(search);
+}
+
 // Search Functionality
 document.getElementById('searchInput').addEventListener('keyup', function() {
     const searchText = this.value.toLowerCase();
