@@ -872,18 +872,22 @@ require_once '../../includes/sidebar.php';
 
                         <div class="form-group" style="grid-column: span 4;">
                             <label class="form-label" style="display: flex; align-items: center; gap: 0.5rem; font-weight: 700; color: var(--text-secondary);">
-                                <i class="ph-bold ph-fingerprint" style="color: var(--primary-400);"></i> NÚMEROS DE SERIE (S/N)
+                                <i class="ph-bold ph-barcode" style="color: var(--primary-400);"></i> NÚMEROS DE SERIE (S/N)
+                                <span style="font-size: 0.75rem; color: var(--primary-400); font-weight: normal; margin-left: 6px;"><i class="ph ph-barcode"></i> (Escáner listo)</span>
                             </label>
                             <div id="serial-numbers-container-wry">
                                 <div class="input-group" style="margin-bottom: 0.5rem; position: relative;">
                                     <input type="text" name="serial_number[]" class="form-control serial-input-wry"
                                         placeholder="Escanee o escriba la serie..." required value="<?php echo $edit_order['serial_number'] ?? ''; ?>"
+                                        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                        onfocus="this.select()"
                                         onblur="validateSerialWryBatch(this)" onkeydown="handleScannerKey(event, this)"
                                         style="border-radius: 12px; height: 50px; font-size: 1.05rem; background: var(--bg-hover);">
                                     <i class="ph ph-barcode input-icon" style="right: 15px; font-size: 1.3rem;"></i>
                                     <div class="warranty-status-msg-wry" style="position: absolute; right: 45px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; pointer-events: none;"></div>
                                 </div>
-                            </div>
+                            </div>                      
+                        </div>
                             <?php if (!$edit_order): ?>
                             <button type="button" class="btn btn-sm" onclick="addSerialNumberWry()" style="margin-top: 0.25rem; font-size: 0.75rem; background: rgba(59, 130, 246, 0.1); color: var(--primary-400); border: 1px dashed var(--primary-500); padding: 8px 16px; border-radius: 8px; font-weight: 600;">
                                 <i class="ph ph-plus-circle"></i> AÑADIR OTRA SERIE
@@ -1117,11 +1121,16 @@ require_once '../../includes/sidebar.php';
                                 </div>
 
                                 <div class="form-group" style="grid-column: span 2;">
-                                    <label class="form-label">Serie (S/N) *</label>
+                                    <label class="form-label">Serie (S/N) * <span style="font-size: 0.75rem; color: var(--primary-500); font-weight: normal; margin-left: 6px;"><i class="ph ph-barcode"></i> Escáner listo</span></label>
                                     <div class="input-group">
                                         <input type="text" name="serial_number[]" class="form-control serial-input" required
-                                            placeholder="Número de serie" onblur="validateSerial(this)">
-                                        <i class="ph ph-barcode input-icon"></i>
+                                            placeholder="Escanee o escriba número de serie"
+                                            autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                                            onfocus="this.select()"
+                                            onkeydown="handleStandardScannerKey(event, this)"
+                                            oninput="handleSerialInput(this)"
+                                            onblur="validateSerial(this)">
+                                        <i class="ph ph-barcode input-icon" style="color: var(--primary-500);"></i>
                                     </div>
                                     <div class="warranty-status-msg"
                                         style="font-size:0.85rem; margin-top:0.4rem; font-weight: 500;"></div>
@@ -1322,6 +1331,15 @@ require_once '../../includes/sidebar.php';
                             const displayStd = document.getElementById('display_client_name_std');
                             if (displayStd) displayStd.value = nameStd ? `${nameStd} ${taxStd ? ' - ' + taxStd : ''}` : 'No seleccionado';
                         }
+
+                        // Auto-focus en el campo Serie (S/N) para escaneo directo con lector de código de barras
+                        setTimeout(() => {
+                            const firstSerial = document.querySelector('#step-2 .serial-input');
+                            if (firstSerial) {
+                                firstSerial.focus();
+                                firstSerial.select();
+                            }
+                        }, 200);
                     }
 
                     // Update buttons
@@ -1466,11 +1484,16 @@ require_once '../../includes/sidebar.php';
 
                     container.appendChild(template);
 
-                    // Animate entry
+                    // Animate entry & Focus serial input for scanner
                     setTimeout(() => {
                         template.style.transition = 'opacity 0.3s ease';
                         template.style.opacity = '1';
-                    }, 10);
+                        const newSerial = template.querySelector('.serial-input');
+                        if (newSerial) {
+                            newSerial.focus();
+                            newSerial.select();
+                        }
+                    }, 50);
 
                     updateRemoveButtons();
                     updateEquipmentNumbers();
@@ -1554,14 +1577,67 @@ require_once '../../includes/sidebar.php';
                     card.style.color = 'var(--primary-500)';
                 }
 
+                let serialTimer = null;
+                function handleSerialInput(input) {
+                    clearTimeout(serialTimer);
+                    const val = input.value.trim();
+                    if (val.length >= 3) {
+                        serialTimer = setTimeout(() => {
+                            validateSerial(input);
+                        }, 300);
+                    }
+                }
+
+                function handleStandardScannerKey(event, input) {
+                    if (event.key === 'Enter' || event.key === 'Tab') {
+                        if (event.key === 'Enter') {
+                            event.preventDefault(); // Evita que el escáner envíe el formulario por error
+                        }
+                        const serial = input.value.trim();
+                        if (serial.length >= 2) {
+                            // Destello visual verde para confirmar escaneo exitoso
+                            input.style.borderColor = 'var(--success)';
+                            input.style.boxShadow = '0 0 0 4px rgba(34, 197, 94, 0.25)';
+                            setTimeout(() => {
+                                input.style.borderColor = '';
+                                input.style.boxShadow = '';
+                            }, 1200);
+
+                            validateSerial(input);
+
+                            // Mover foco automáticamente al siguiente campo vacío de forma inteligente
+                            const block = input.closest('.equipment-block');
+                            if (block) {
+                                const brandInput = block.querySelector('[name="brand[]"]');
+                                const accInput = block.querySelector('[name="accessories[]"]');
+                                const probInput = block.querySelector('[name="problem_reported[]"]');
+
+                                setTimeout(() => {
+                                    if (brandInput && !brandInput.value.trim()) {
+                                        brandInput.focus();
+                                        brandInput.select();
+                                    } else if (accInput && !accInput.value.trim()) {
+                                        accInput.focus();
+                                    } else if (probInput && !probInput.value.trim()) {
+                                        probInput.focus();
+                                    }
+                                }, 150);
+                            }
+                        }
+                    }
+                }
+
                 function validateSerial(input) {
                     const serial = input.value.trim();
                     if (serial.length < 3) return;
 
                     const block = input.closest('.equipment-block');
+                    if (!block) return;
                     const statusDiv = block.querySelector('.warranty-status-msg');
 
-                    statusDiv.innerHTML = '<span style="color:var(--text-secondary);"><i class="ph ph-spinner ph-spin"></i> Verificando...</span>';
+                    if (statusDiv) {
+                        statusDiv.innerHTML = '<span style="color:var(--text-secondary);"><i class="ph ph-spinner ph-spin"></i> Verificando...</span>';
+                    }
 
                     fetch('check_warranty.php?serial_number=' + encodeURIComponent(serial))
                         .then(r => r.json())
@@ -1583,15 +1659,19 @@ require_once '../../includes/sidebar.php';
                                     invoiceInput.style.borderColor = 'var(--success)';
                                 }
 
-                                if (data.status === 'valid') {
-                                    statusDiv.innerHTML = '<span style="color:var(--success);"><i class="ph ph-check-circle"></i> Garantía Activa</span>';
-                                } else if (data.status === 'expired') {
-                                    statusDiv.innerHTML = '<span style="color:var(--warning);"><i class="ph ph-warning"></i> Garantía Expirada</span>';
-                                } else {
-                                    statusDiv.innerHTML = '<span style="color:var(--text-secondary);"><i class="ph ph-info"></i> Registrado previamente</span>';
+                                if (statusDiv) {
+                                    if (data.status === 'valid') {
+                                        statusDiv.innerHTML = '<span style="color:var(--success);"><i class="ph ph-check-circle"></i> Garantía Activa</span>';
+                                    } else if (data.status === 'expired') {
+                                        statusDiv.innerHTML = '<span style="color:var(--warning);"><i class="ph ph-warning"></i> Garantía Expirada</span>';
+                                    } else {
+                                        statusDiv.innerHTML = '<span style="color:var(--text-secondary);"><i class="ph ph-info"></i> Registrado previamente</span>';
+                                    }
                                 }
                             } else {
-                                statusDiv.innerHTML = '<span style="color:var(--primary-500);"><i class="ph ph-sparkle"></i> Equipo nuevo en taller</span>';
+                                if (statusDiv) {
+                                    statusDiv.innerHTML = '<span style="color:var(--primary-500);"><i class="ph ph-sparkle"></i> Equipo nuevo en taller</span>';
+                                }
                                 const clientInput = block.querySelector('.registered-client-input');
                                 const invoiceInput = block.querySelector('.invoice-input');
                                 if (clientInput) clientInput.value = '';
@@ -1602,7 +1682,7 @@ require_once '../../includes/sidebar.php';
                             }
                         })
                         .catch(e => {
-                            statusDiv.innerHTML = '';
+                            if (statusDiv) statusDiv.innerHTML = '';
                         });
                 }
 
@@ -2615,6 +2695,8 @@ require_once '../../includes/sidebar.php';
         newRow.innerHTML = `
             <input type="text" name="serial_number[]" class="form-control serial-input-wry"
                 placeholder="S/N" required
+                autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+                onfocus="this.select()"
                 onblur="validateSerialWryBatch(this)" onkeydown="handleScannerKey(event, this)">
             <i class="ph ph-barcode input-icon"></i>
             <div class="warranty-status-msg-wry" style="position: absolute; right: 40px; top: 50%; transform: translateY(-50%); font-size: 0.75rem; pointer-events: none;"></div>
