@@ -942,14 +942,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $pdo->exec("SET FOREIGN_KEY_CHECKS = 0");
 
                 // Step 1: Collect IDs of warranty service orders BEFORE deleting anything
-                $warrantyOrderIds = $pdo->query("SELECT id FROM service_orders WHERE service_type = 'warranty'")->fetchAll(PDO::FETCH_COLUMN);
+                $warrantyOrderIds = $pdo->query("SELECT id FROM service_orders WHERE service_type = 'warranty' AND problem_reported = 'Garantía Registrada'")->fetchAll(PDO::FETCH_COLUMN);
 
-                // Step 2: Clear warranties table first
-                $pdo->exec("TRUNCATE TABLE warranties");
-
-                // Step 3: Delete histories using the pre-collected IDs
+                // Step 2 & 3: Delete related records using the pre-collected IDs
                 if (!empty($warrantyOrderIds)) {
                     $ids = implode(',', array_map('intval', $warrantyOrderIds));
+                    $pdo->exec("DELETE FROM warranties WHERE service_order_id IN ($ids)");
                     $pdo->exec("DELETE FROM service_order_history WHERE service_order_id IN ($ids)");
                     $pdo->exec("DELETE FROM service_orders WHERE id IN ($ids)");
                 }

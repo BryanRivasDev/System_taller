@@ -44,8 +44,14 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
     $comma_count = substr_count($header_line, ',');
     $delimiter = ($tab_count >= $semi_count && $tab_count >= $comma_count && $tab_count > 0) ? "\t" : ($semi_count > $comma_count ? ';' : ',');
 
-    // Parse headers
-    $raw_headers = explode($delimiter, trim($header_line, "\r\n"));
+    rewind($handle);
+    $raw_headers = fgetcsv($handle, 0, $delimiter);
+    if (!$raw_headers) {
+        fclose($handle);
+        echo json_encode(['success' => false, 'message' => 'Error al leer cabeceras.']);
+        exit;
+    }
+
     $headers = [];
     foreach ($raw_headers as $h) {
         $h = trim($h, " \t\n\r\0\x0B\"");
@@ -54,24 +60,9 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
     }
     $header_map = array_flip($headers);
 
-    // 2. Skip to offset and detect encoding
+    // 2. Skip to offset using fgetcsv to respect logical rows with quotes
     $current_line_idx = 0;
-    $encoding = 'UTF-8';
-    
-    // Detect encoding from the first record (just after header)
-    $first_record = fgets($handle);
-    if ($first_record !== false) {
-        if (function_exists('mb_detect_encoding')) {
-            $encoding = mb_detect_encoding($first_record, 'UTF-8, ISO-8859-1, Windows-1252', true) ?: 'UTF-8';
-        }
-        rewind($handle);
-        fgets($handle); // Skip header again
-    } else {
-        rewind($handle);
-        fgets($handle);
-    }
-
-    while ($current_line_idx < $offset && fgets($handle) !== false) {
+    while ($current_line_idx < $offset && fgetcsv($handle, 0, $delimiter) !== false) {
         $current_line_idx++;
     }
 
@@ -83,21 +74,32 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
     try {
         $pdo->beginTransaction();
         
-        while ($count < $limit && ($line = fgets($handle)) !== false) {
-            if ($encoding !== 'UTF-8') {
-                $line = iconv($encoding, 'UTF-8//IGNORE', $line);
+        while ($count < $limit && ($cols = fgetcsv($handle, 0, $delimiter)) !== false) {
+            // Skip empty rows (including rows with multiple empty columns like ;;;;)
+            if ($cols === [null] || empty($cols)) {
+                continue;
             }
-            $line = trim($line, "\r\n");
-            if ($line === '') continue;
             
-            // Ensure UTF-8 safety per line
-            if (!mb_check_encoding($line, 'UTF-8')) {
-                $line = mb_convert_encoding($line, 'UTF-8', 'Windows-1252');
+            $is_empty = true;
+            foreach ($cols as $c) {
+                if (trim($c) !== '') {
+                    $is_empty = false;
+                    break;
+                }
+            }
+            if ($is_empty) {
+                continue;
             }
             
             $count++;
-            $cols = explode($delimiter, $line);
-            foreach ($cols as &$val) $val = trim($val, " \t\n\r\0\x0B\"");
+            
+            foreach ($cols as &$val) {
+                // File is converted to UTF-8 on upload, but just to be safe
+                if (!mb_check_encoding($val, 'UTF-8')) {
+                    $val = mb_convert_encoding($val, 'UTF-8', 'Windows-1252');
+                }
+                $val = trim($val, " \t\n\r\0\x0B\"");
+            }
             unset($val);
 
             $data = [];
@@ -106,19 +108,20 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
             }
 
             // --- Business Logic ---
-    $serial = trim($data['Serie'] ?? '');
-    $product_code = trim($data['Codigo'] ?? '');
-    $sales_invoice = trim($data['FACTURA DE VENTA'] ?? '');
-    
-    // Fallback if serial is completely empty, to allow DB insertion
-    if (empty($serial)) {
-        $serial = 'S/N-' . uniqid();
-    }
-
-    // (Duplicate check removed per user request)
+            $serial = trim($data['Serie'] ?? $data['SERIE'] ?? '');
+            $product_code = trim($data['Codigo'] ?? $data['CÓDIGO'] ?? $data['Codigo '] ?? '');
+            $sales_invoice = trim($data['FACTURA DE VENTA'] ?? $data['FACTUTA DE VENTA'] ?? $data['NUMERO DE FACTURA'] ?? '');
+            
+            // Fallback if serial is completely empty, to allow DB insertion
+            if (empty($serial)) {
+                $serial = 'S/N-' . uniqid();
+            }
 
             // Client
-            $client_name = trim($data['CLIENTE'] ?? '');
+            $client_name = trim($data['CLIENTE'] ?? $data['Cliente'] ?? $data['NOMBRE DE CLIENTE'] ?? '');
+            if (empty($client_name)) {
+                $client_name = 'Bodega - Inventario';
+            }
             $stmt = $pdo->prepare("SELECT id FROM clients WHERE name = ? LIMIT 1");
             $stmt->execute([$client_name]);
             $client_id = $stmt->fetchColumn();
@@ -139,7 +142,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
             }
 
             // Equipment
-            $desc = trim($data['Equipo'] ?? $data['Descripcion'] ?? '');
+            $desc = trim($data['Equipo'] ?? $data['Descripcion'] ?? $data['Descripción'] ?? $data['PRODUCTO'] ?? $data['Descripcin'] ?? '');
             $brand = !empty($desc) ? $desc : 'Desconocido';
             $stmt = $pdo->prepare("SELECT id FROM equipments WHERE serial_number = ? LIMIT 1");
             $stmt->execute([$serial]);
@@ -150,21 +153,21 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
                 $stmt->execute([$client_id, $brand, '', '', $serial, get_local_datetime()]);
                 $equipment_id = $pdo->lastInsertId();
             } else {
-                $stmt = $pdo->prepare("UPDATE equipments SET brand = IF(brand IS NULL OR brand = '', ?, brand) WHERE id = ?");
+                $stmt = $pdo->prepare("UPDATE equipments SET brand = IF(brand IS NULL OR brand = 'Desconocido' OR brand = '', ?, brand) WHERE id = ?");
                 $stmt->execute([$brand, $equipment_id]);
             }
 
             // Dates
             $parse_date = function($d) {
                 if (empty($d)) return null;
-                $d = str_replace('-', '/', $d);
+                $d = str_replace(['-', ' '], '/', $d);
                 $p = explode('/', $d);
                 if (count($p) == 3 && strlen($p[0]) <= 2 && strlen($p[2]) == 4) return "{$p[2]}-{$p[1]}-{$p[0]}";
                 $ts = strtotime($d);
                 return $ts ? date('Y-m-d', $ts) : null;
             };
 
-            $entry_date_base = $parse_date(trim($data['FECHA'] ?? '')) ?: date('Y-m-d');
+            $entry_date_base = $parse_date(trim($data['FECHA'] ?? $data['FECHA DE VENTA'] ?? '')) ?: date('Y-m-d');
             $entry_date = $entry_date_base . ' ' . date('H:i:s');
             
             // Service Order
@@ -173,10 +176,10 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
             $order_id = $pdo->lastInsertId();
 
             // Warranty
-            $master_invoice = trim($data['Factura Proveedor'] ?? $data['Factura'] ?? '');
+            $master_invoice = trim($data['Factura Proveedor'] ?? $data['Factura'] ?? $data['FACTURA'] ?? '');
             $master_date_raw = trim($data['Fecha Proveedor'] ?? $data['Fecha2'] ?? '');
             $master_date = $parse_date($master_date_raw);
-            $supplier = trim($data['Proveedor'] ?? '');
+            $supplier = trim($data['Proveedor'] ?? $data['Provedor'] ?? $data['PROVEDOR'] ?? '');
 
             $stmt = $pdo->prepare("INSERT INTO warranties (service_order_id, equipment_id, product_code, sales_invoice_number, master_entry_invoice, master_entry_date, supplier_name, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)");
             $stmt->execute([$order_id, $equipment_id, $product_code, $sales_invoice, $master_invoice, $master_date, $supplier, get_local_datetime()]);
@@ -191,7 +194,7 @@ if (isset($_GET['action']) && $_GET['action'] === 'process_chunk') {
         exit;
     }
 
-    $is_done = (($line = fgets($handle)) === false);
+    $is_done = feof($handle);
     fclose($handle);
 
     echo json_encode([
@@ -230,8 +233,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['csv_file'])) {
         if ($import_mode === 'overwrite') {
             try {
                 $pdo->beginTransaction();
-                // We only delete those with service_type = 'warranty'
-                $stmt = $pdo->query("SELECT id FROM service_orders WHERE service_type = 'warranty'");
+                // We only delete those with service_type = 'warranty' that are Bodega inventory
+                $stmt = $pdo->query("SELECT id FROM service_orders WHERE service_type = 'warranty' AND problem_reported = 'Garantía Registrada'");
                 $orders = $stmt->fetchAll(PDO::FETCH_COLUMN);
                 
                 if (count($orders) > 0) {
