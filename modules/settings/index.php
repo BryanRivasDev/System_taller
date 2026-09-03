@@ -69,6 +69,7 @@ $defined_modules = [
     'categories' => 'Gestión de Categorías de Equipos',
     'reporte_facturas' => 'Reporte de Facturas',
     'audit_logs' => 'Auditoría y Logs del Sistema',
+    'revert_status' => 'Retroceder Estado de Servicio/Garantía',
 ];
 
 try {
@@ -1496,6 +1497,7 @@ require_once '../../includes/sidebar.php';
                         'tech_agenda' => ['label' => 'Mi Agenda Técnica', 'cat' => 'Proyecto', 'icon' => 'ph-map-trifold'],
                         'master_visit_control' => ['label' => 'Control Maestro', 'cat' => 'Proyecto', 'icon' => 'ph-monitor'],
                         'edit_entries' => ['label' => 'Editar Entradas', 'cat' => 'Gestión', 'icon' => 'ph-pencil-simple'],
+                        'revert_status' => ['label' => 'Retroceder Estado', 'cat' => 'Gestión', 'icon' => 'ph-arrow-u-up-left'],
 
                         'comisiones' => ['label' => 'Comisiones', 'cat' => 'Finanzas', 'icon' => 'ph-coins'],
                         'manage_services' => ['label' => 'Cierre / Facturación', 'cat' => 'Finanzas', 'icon' => 'ph-receipt'],
@@ -1631,6 +1633,7 @@ require_once '../../includes/sidebar.php';
                         'schedule' => ['label' => 'Agenda / Visitas', 'cat' => 'Proyecto', 'icon' => 'ph-calendar-blank'],
                         'tech_agenda' => ['label' => 'Mi Agenda Técnica', 'cat' => 'Proyecto', 'icon' => 'ph-map-trifold'],
                         'edit_entries' => ['label' => 'Editar Entradas', 'cat' => 'Gestión', 'icon' => 'ph-pencil-simple'],
+                        'revert_status' => ['label' => 'Retroceder Estado', 'cat' => 'Gestión', 'icon' => 'ph-arrow-u-up-left'],
 
                         'comisiones' => ['label' => 'Comisiones', 'cat' => 'Finanzas', 'icon' => 'ph-coins'],
                         'manage_services' => ['label' => 'Cierre / Facturación', 'cat' => 'Finanzas', 'icon' => 'ph-receipt'],

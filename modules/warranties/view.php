@@ -753,13 +753,13 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                 <?php 
                                 $statusOrder = array_keys($statusLabels);
                                 $currentIndex = array_search($order['status'], $statusOrder);
-                                $isSuperAdmin = isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'superadmin';
+                                $canRevertStatus = (isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'superadmin') || has_permission('module_revert_status', $pdo);
                                 
                                 foreach($statusLabels as $key => $label): 
                                     if($key !== 'delivered' && $key !== 'cancelled'): 
                                         $loopIndex = array_search($key, $statusOrder);
                                         $isDisabled = false;
-                                        if (!$isSuperAdmin && $currentIndex !== false && $loopIndex !== false) {
+                                        if (!$canRevertStatus && $currentIndex !== false && $loopIndex !== false) {
                                             $isDisabled = ($loopIndex < $currentIndex);
                                         }
                                 ?>

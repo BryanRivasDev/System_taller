@@ -909,13 +909,13 @@ $is_history_view = (isset($_GET['view_source']) && $_GET['view_source'] === 'his
                                     ];
                                     $statusOrder = array_keys($status_options);
                                     $currentIndex = array_search($order['status'], $statusOrder);
-                                    $isSuperAdmin = isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'superadmin';
+                                    $canRevertStatus = (isset($_SESSION['role_name']) && strtolower($_SESSION['role_name']) === 'superadmin') || has_permission('module_revert_status', $pdo);
                                     
                                     foreach ($status_options as $val => $label): 
                                         $loopIndex = array_search($val, $statusOrder);
                                         // Disable previous statuses EXCEPT if standard flow (don't disable Cancelado unless delivered)
                                         $isDisabled = false;
-                                        if (!$isSuperAdmin && $currentIndex !== false && $loopIndex !== false) {
+                                        if (!$canRevertStatus && $currentIndex !== false && $loopIndex !== false) {
                                             if ($val === 'cancelled') {
                                                 $isDisabled = ($order['status'] === 'delivered');
                                             } else {
